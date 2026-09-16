@@ -4,7 +4,7 @@ The smallest launchable product is intentionally only this:
 
 1. Sign in with Google.
 2. Publish an anonymous text post.
-3. Reply with the Google account's display name and avatar.
+3. Reply with the Google account's display name, or anonymously if the box is checked.
 
 There are no DMs, invitations, profiles, likes, search, categories, notifications, images, realtime updates, or admin UI. Admin moderation happens directly in the Supabase dashboard.
 

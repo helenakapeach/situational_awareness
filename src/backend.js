@@ -39,6 +39,7 @@ function initialDemoData() {
         post_id: 2,
         author_name: '林然',
         author_avatar_url: '',
+        is_anonymous: false,
         body: '我会先把“接项目”和“接受当前资源条件”拆开。可以接，但把成功条件、依赖和缺口写成一页，当面请老板选择取舍。',
         created_at: hoursAgo(1),
       },
@@ -47,14 +48,16 @@ function initialDemoData() {
         post_id: 1,
         author_name: 'Wendy Zhang',
         author_avatar_url: '',
+        is_anonymous: false,
         body: '先从共同目标切入，再把数据当作一个需要一起解释的新信号，而不是结论。比如：“这组结果和我们的假设不太一样，我们一起看看可能漏掉了什么？”',
         created_at: hoursAgo(18),
       },
       {
         id: 1,
         post_id: 1,
-        author_name: '陈宇',
+        author_name: '匿名成员',
         author_avatar_url: '',
+        is_anonymous: true,
         body: '如果时间允许，可以先私下聊，不要在大会议里第一次提出。给对方保留重新包装方案的空间。',
         created_at: hoursAgo(21),
       },
@@ -132,7 +135,7 @@ export function createBackend() {
 
       const { data: replies, error: repliesError } = await supabase
         .from('replies')
-        .select('id,post_id,author_name,author_avatar_url,body,created_at')
+        .select('id,post_id,author_name,author_avatar_url,is_anonymous,body,created_at')
         .in('post_id', posts.map((post) => post.id))
         .order('created_at', { ascending: true })
 
@@ -239,12 +242,14 @@ function createDemoBackend() {
 
     async createReply(postId, reply) {
       const data = readData()
+      const isAnonymous = Boolean(reply.is_anonymous)
       data.replies.push({
         id: data.nextReplyId++,
         post_id: postId,
-        author_name: demoUser.user_metadata.full_name,
+        author_name: isAnonymous ? '匿名成员' : demoUser.user_metadata.full_name,
         author_avatar_url: '',
-        ...reply,
+        is_anonymous: isAnonymous,
+        body: reply.body,
         created_at: new Date().toISOString(),
       })
       writeData(data)

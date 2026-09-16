@@ -22,7 +22,11 @@ test('post validation trims valid content and rejects missing fields', () => {
 test('reply validation rejects empty and oversized replies', () => {
   assert.deepEqual(validateReply('  一个建议  '), {
     ok: true,
-    value: { body: '一个建议' },
+    value: { body: '一个建议', is_anonymous: false },
+  })
+  assert.deepEqual(validateReply('一个建议', true), {
+    ok: true,
+    value: { body: '一个建议', is_anonymous: true },
   })
   assert.equal(validateReply(' ').ok, false)
   assert.equal(validateReply('a'.repeat(2001)).ok, false)

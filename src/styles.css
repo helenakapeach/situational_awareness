@@ -449,6 +449,37 @@ textarea::placeholder {
   margin-top: 13px;
 }
 
+.reply-meta {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.checkbox-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 4px 0;
+  min-height: 28px;
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.checkbox-line input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  padding: 0;
+  flex: none;
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+
 .character-count,
 .reply-identity {
   color: var(--text-faint);
@@ -720,7 +751,6 @@ textarea::placeholder {
 }
 
 .reply-identity {
-  max-width: 65%;
   line-height: 1.5;
 }
 
@@ -840,10 +870,6 @@ textarea::placeholder {
   .primary-button,
   .secondary-button {
     width: 100%;
-  }
-
-  .reply-identity {
-    max-width: none;
   }
 }
 

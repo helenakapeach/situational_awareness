@@ -29,7 +29,7 @@ export function validatePost(title, body) {
   return { ok: true, value: { title: cleanTitle, body: cleanBody } }
 }
 
-export function validateReply(body) {
+export function validateReply(body, anonymous = false) {
   const cleanBody = normalizeText(body)
 
   if (!cleanBody) {
@@ -39,7 +39,7 @@ export function validateReply(body) {
     return { ok: false, message: `回复不能超过 ${LIMITS.replyMax} 个字。` }
   }
 
-  return { ok: true, value: { body: cleanBody } }
+  return { ok: true, value: { body: cleanBody, is_anonymous: Boolean(anonymous) } }
 }
 
 export function formatRelativeTime(input, now = Date.now()) {

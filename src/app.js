@@ -102,13 +102,14 @@ function makeAvatar(name, avatarUrl, anonymous = false) {
 }
 
 function makeReply(reply) {
+  const anonymous = Boolean(reply.is_anonymous)
   const item = element('li', 'reply')
-  item.append(makeAvatar(reply.author_name, reply.author_avatar_url))
+  item.append(makeAvatar(reply.author_name, reply.author_avatar_url, anonymous))
 
   const content = element('div', 'reply-content')
   const header = element('div', 'reply-header')
   header.append(
-    element('strong', 'reply-name', reply.author_name || 'Google 用户'),
+    element('strong', 'reply-name', anonymous ? '匿名成员' : reply.author_name || 'Google 用户'),
     element('time', 'reply-time', formatRelativeTime(reply.created_at)),
   )
   const body = element('p', 'reply-body', reply.body)
@@ -117,12 +118,21 @@ function makeReply(reply) {
   return item
 }
 
+function replyIdentityText(anonymous) {
+  return anonymous
+    ? '将以匿名身份回复'
+    : `将以 ${displayName(session?.user)} 的名义回复`
+}
+
 function makeReplyForm(postId) {
   const form = element('form', 'reply-form')
   const label = element('label', 'sr-only', '写下你的回复')
   const textarea = document.createElement('textarea')
   const actions = element('div', 'reply-actions')
-  const identity = element('span', 'reply-identity', `将以 ${displayName(session?.user)} 的名义回复`)
+  const meta = element('div', 'reply-meta')
+  const anonymousLabel = element('label', 'checkbox-line')
+  const anonymousInput = document.createElement('input')
+  const identity = element('span', 'reply-identity', replyIdentityText(false))
   const button = element('button', 'secondary-button', '发布回复')
 
   label.htmlFor = `reply-${postId}`
@@ -132,14 +142,25 @@ function makeReplyForm(postId) {
   textarea.maxLength = LIMITS.replyMax
   textarea.placeholder = '分享你的判断、经历或一个值得追问的问题…'
   textarea.required = true
+
+  anonymousInput.type = 'checkbox'
+  anonymousInput.name = 'anonymous'
+  anonymousLabel.append(anonymousInput, document.createTextNode('匿名回复'))
+  identity.id = `reply-identity-${postId}`
+  anonymousInput.setAttribute('aria-describedby', identity.id)
+  anonymousInput.addEventListener('change', () => {
+    identity.textContent = replyIdentityText(anonymousInput.checked)
+  })
+
   button.type = 'submit'
 
-  actions.append(identity, button)
+  meta.append(anonymousLabel, identity)
+  actions.append(meta, button)
   form.append(label, textarea, actions)
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault()
-    const result = validateReply(textarea.value)
+    const result = validateReply(textarea.value, anonymousInput.checked)
     if (!result.ok) {
       showToast(result.message, 'error')
       textarea.focus()
@@ -151,7 +172,7 @@ function makeReplyForm(postId) {
       await backend.createReply(postId, result.value)
       textarea.value = ''
       await loadPosts({ preserveOpenPost: String(postId) })
-      showToast('回复已发布。')
+      showToast(result.value.is_anonymous ? '已匿名回复。' : '回复已发布。')
     } catch (error) {
       showToast(friendlyError(error), 'error')
     } finally {
