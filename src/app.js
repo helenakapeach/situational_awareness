@@ -112,9 +112,58 @@ function makeReply(reply) {
     element('time', 'reply-time', formatRelativeTime(reply.created_at)),
   )
   const body = element('p', 'reply-body', reply.body)
-  content.append(header, body)
+  content.append(header, body, makeVoteButton(reply))
   item.append(content)
   return item
+}
+
+function makeThumbsUpIcon() {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  svg.setAttribute('viewBox', '0 0 24 24')
+  svg.setAttribute('aria-hidden', 'true')
+  svg.innerHTML =
+    '<path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/>'
+  return svg
+}
+
+function makeVoteButton(reply) {
+  let liked = Boolean(reply.liked_by_me)
+  let count = Math.max(0, Number(reply.upvote_count) || 0)
+  const button = document.createElement('button')
+  const countLabel = element('span', 'vote-count', String(count))
+  button.type = 'button'
+  button.className = 'vote-button'
+  button.append(makeThumbsUpIcon(), countLabel)
+
+  function render() {
+    button.setAttribute('aria-pressed', liked ? 'true' : 'false')
+    button.setAttribute('aria-label', liked ? `取消点赞，当前 ${count} 人点赞` : `点赞，当前 ${count} 人点赞`)
+    countLabel.textContent = String(count)
+  }
+  render()
+
+  button.addEventListener('click', async () => {
+    if (button.disabled) return
+    button.disabled = true
+    const previousLiked = liked
+    const previousCount = count
+    liked = !liked
+    count = Math.max(0, count + (liked ? 1 : -1))
+    render()
+
+    try {
+      await backend.toggleReplyVote(reply.id)
+    } catch (error) {
+      liked = previousLiked
+      count = previousCount
+      render()
+      showToast(friendlyError(error), 'error')
+    } finally {
+      button.disabled = false
+    }
+  })
+
+  return button
 }
 
 function makeReplyForm(postId) {

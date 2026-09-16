@@ -149,7 +149,7 @@ a:focus-visible {
 
 .eyebrow {
   margin: 0 0 8px;
-  color: var(--brand);
+  color: var(--insight-text);
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.14em;
@@ -343,7 +343,7 @@ button:disabled {
 }
 
 .rule-number {
-  color: var(--brand);
+  color: var(--insight-text);
   font-family: var(--sans);
   font-size: 13px;
   font-weight: 700;
@@ -569,8 +569,8 @@ textarea::placeholder {
   flex: none;
   overflow: hidden;
   place-items: center;
-  color: var(--brand);
-  background: var(--brand-tint);
+  color: var(--verified);
+  background: var(--verified-tint);
   border-radius: 50%;
   font-size: 10px;
   font-weight: 800;
@@ -695,6 +695,47 @@ textarea::placeholder {
   color: var(--text-soft);
   font-size: 14px;
   line-height: 1.75;
+}
+
+.vote-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  min-height: 32px;
+  padding: 0 10px 0 8px;
+  color: var(--text-faint);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.vote-button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentcolor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.vote-button:hover,
+.vote-button[aria-pressed="true"] {
+  color: var(--brand);
+  background: var(--brand-tint);
+  border-color: var(--brand);
+}
+
+.vote-button[aria-pressed="true"] svg {
+  fill: currentcolor;
+}
+
+.vote-count {
+  font-variant-numeric: tabular-nums;
 }
 
 .empty-replies {

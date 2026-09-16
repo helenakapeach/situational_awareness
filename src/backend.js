@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
+import { sortReplies, withVoteState } from './lib.js'
 
-const DEMO_STORAGE_KEY = 'situational-awareness-demo-v1'
+const DEMO_STORAGE_KEY = 'situational-awareness-demo-v2'
 const DEMO_SESSION_KEY = 'situational-awareness-demo-session'
 
 const demoUser = {
@@ -18,7 +19,7 @@ function hoursAgo(hours) {
 function initialDemoData() {
   return {
     nextPostId: 3,
-    nextReplyId: 4,
+    nextReplyId: 5,
     posts: [
       {
         id: 2,
@@ -41,6 +42,16 @@ function initialDemoData() {
         author_avatar_url: '',
         body: '我会先把“接项目”和“接受当前资源条件”拆开。可以接，但把成功条件、依赖和缺口写成一页，当面请老板选择取舍。',
         created_at: hoursAgo(1),
+        upvote_count: 1,
+      },
+      {
+        id: 4,
+        post_id: 1,
+        author_name: '周宁',
+        author_avatar_url: '',
+        body: '如果对方在意面子，可以把数据框成“我们一起还没解释清楚的现象”，让他有空间把方案改成自己的下一版，而不是被当众纠正。',
+        created_at: hoursAgo(10),
+        upvote_count: 3,
       },
       {
         id: 2,
@@ -49,6 +60,7 @@ function initialDemoData() {
         author_avatar_url: '',
         body: '先从共同目标切入，再把数据当作一个需要一起解释的新信号，而不是结论。比如：“这组结果和我们的假设不太一样，我们一起看看可能漏掉了什么？”',
         created_at: hoursAgo(18),
+        upvote_count: 0,
       },
       {
         id: 1,
@@ -57,7 +69,17 @@ function initialDemoData() {
         author_avatar_url: '',
         body: '如果时间允许，可以先私下聊，不要在大会议里第一次提出。给对方保留重新包装方案的空间。',
         created_at: hoursAgo(21),
+        upvote_count: 3,
       },
+    ],
+    reply_votes: [
+      { reply_id: 1, user_id: 'seed-a' },
+      { reply_id: 1, user_id: 'seed-b' },
+      { reply_id: 1, user_id: 'demo-user' },
+      { reply_id: 3, user_id: 'seed-c' },
+      { reply_id: 4, user_id: 'seed-d' },
+      { reply_id: 4, user_id: 'seed-e' },
+      { reply_id: 4, user_id: 'seed-f' },
     ],
   }
 }
@@ -132,22 +154,21 @@ export function createBackend() {
 
       const { data: replies, error: repliesError } = await supabase
         .from('replies')
-        .select('id,post_id,author_name,author_avatar_url,body,created_at')
+        .select('id,post_id,author_name,author_avatar_url,body,created_at,upvote_count,reply_votes(reply_id)')
         .in('post_id', posts.map((post) => post.id))
-        .order('created_at', { ascending: true })
 
       if (repliesError) throw repliesError
 
       const repliesByPost = new Map()
-      for (const reply of replies) {
+      for (const { reply_votes, ...reply } of replies || []) {
         const key = String(reply.post_id)
         if (!repliesByPost.has(key)) repliesByPost.set(key, [])
-        repliesByPost.get(key).push(reply)
+        repliesByPost.get(key).push(withVoteState(reply, reply_votes && reply_votes.length > 0))
       }
 
       return posts.map((post) => ({
         ...post,
-        replies: repliesByPost.get(String(post.id)) || [],
+        replies: sortReplies(repliesByPost.get(String(post.id)) || []),
       }))
     },
 
@@ -158,6 +179,11 @@ export function createBackend() {
 
     async createReply(postId, reply) {
       const { error } = await supabase.from('replies').insert({ post_id: postId, ...reply })
+      if (error) throw error
+    },
+
+    async toggleReplyVote(replyId) {
+      const { error } = await supabase.rpc('toggle_reply_vote', { p_reply_id: replyId })
       if (error) throw error
     },
   }
@@ -220,12 +246,20 @@ function createDemoBackend() {
 
     async listPosts() {
       const data = readData()
+      const likedIds = new Set(
+        (data.reply_votes || [])
+          .filter((vote) => vote.user_id === demoUser.id)
+          .map((vote) => Number(vote.reply_id)),
+      )
+
       return data.posts
         .map((post) => ({
           ...post,
-          replies: data.replies
-            .filter((reply) => String(reply.post_id) === String(post.id))
-            .sort((a, b) => new Date(a.created_at) - new Date(b.created_at)),
+          replies: sortReplies(
+            data.replies
+              .filter((reply) => String(reply.post_id) === String(post.id))
+              .map((reply) => withVoteState(reply, likedIds.has(Number(reply.id)))),
+          ),
         }))
         .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
         .slice(0, 50)
@@ -245,8 +279,31 @@ function createDemoBackend() {
         author_name: demoUser.user_metadata.full_name,
         author_avatar_url: '',
         ...reply,
+        upvote_count: 0,
         created_at: new Date().toISOString(),
       })
+      writeData(data)
+    },
+
+    async toggleReplyVote(replyId) {
+      const data = readData()
+      if (!Array.isArray(data.reply_votes)) data.reply_votes = []
+
+      const reply = data.replies.find((item) => String(item.id) === String(replyId))
+      if (!reply) throw new Error('这条回复已经不存在。')
+
+      const existingAt = data.reply_votes.findIndex(
+        (vote) => String(vote.reply_id) === String(replyId) && vote.user_id === demoUser.id,
+      )
+
+      if (existingAt >= 0) {
+        data.reply_votes.splice(existingAt, 1)
+        reply.upvote_count = Math.max(0, (Number(reply.upvote_count) || 0) - 1)
+      } else {
+        data.reply_votes.push({ reply_id: reply.id, user_id: demoUser.id })
+        reply.upvote_count = (Number(reply.upvote_count) || 0) + 1
+      }
+
       writeData(data)
     },
   }
