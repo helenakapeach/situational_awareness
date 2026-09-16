@@ -1,7 +1,10 @@
 import { createClient } from '@supabase/supabase-js'
+import { normalizeInviteCode } from './lib.js'
 
 const DEMO_STORAGE_KEY = 'situational-awareness-demo-v1'
 const DEMO_SESSION_KEY = 'situational-awareness-demo-session'
+const DEMO_MEMBER_KEY = 'situational-awareness-demo-member'
+const DEMO_INVITE_CODE = 'DEMO2026'
 
 const demoUser = {
   id: 'demo-user',
@@ -120,6 +123,23 @@ export function createBackend() {
       if (error) throw error
     },
 
+    async isMember(userId) {
+      const { data, error } = await supabase
+        .from('members')
+        .select('user_id')
+        .eq('user_id', userId)
+        .maybeSingle()
+
+      if (error) throw error
+      return Boolean(data)
+    },
+
+    async redeemInviteCode(code) {
+      const { data, error } = await supabase.rpc('redeem_invite_code', { p_code: code })
+      if (error) throw error
+      return Boolean(data)
+    },
+
     async listPosts() {
       const { data: posts, error: postsError } = await supabase
         .from('posts')
@@ -216,6 +236,18 @@ function createDemoBackend() {
     async signOut() {
       window.localStorage.removeItem(DEMO_SESSION_KEY)
       emit()
+    },
+
+    // Membership persists across sign-out/sign-in, same as a real
+    // `members` row would for a returning Google account.
+    async isMember() {
+      return window.localStorage.getItem(DEMO_MEMBER_KEY) === '1'
+    },
+
+    async redeemInviteCode(code) {
+      if (normalizeInviteCode(code) !== DEMO_INVITE_CODE) return false
+      window.localStorage.setItem(DEMO_MEMBER_KEY, '1')
+      return true
     },
 
     async listPosts() {

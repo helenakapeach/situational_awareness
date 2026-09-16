@@ -227,6 +227,23 @@ button:disabled {
   text-align: center;
 }
 
+.invite-error {
+  margin: 10px 0 0;
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.invite-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.invite-signout {
+  display: block;
+  margin: 22px auto 0;
+}
+
 .app-shell {
   min-height: 100vh;
 }

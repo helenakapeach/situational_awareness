@@ -9,6 +9,18 @@ export function normalizeText(value) {
   return String(value ?? '').trim()
 }
 
+export function normalizeInviteCode(value) {
+  return String(value ?? '').trim().toUpperCase()
+}
+
+export function validateInviteCode(value) {
+  const code = normalizeInviteCode(value)
+  if (!code) {
+    return { ok: false, message: '请输入邀请码。' }
+  }
+  return { ok: true, value: code }
+}
+
 export function validatePost(title, body) {
   const cleanTitle = normalizeText(title)
   const cleanBody = normalizeText(body)

@@ -65,6 +65,49 @@
       </section>
     </main>
 
+    <main id="invite-view" class="center-view" hidden>
+      <section class="login-card" aria-labelledby="invite-title">
+        <div class="login-brand">
+          <div class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 40 40">
+              <circle cx="20" cy="20" r="16" />
+              <path d="M20 8l4 12-4 12-4-12z" />
+              <circle class="brand-center" cx="20" cy="20" r="2" />
+            </svg>
+          </div>
+          <div>
+            <div class="brand-name">Situational Awareness</div>
+            <div class="brand-subtitle">职场态势感知社群</div>
+          </div>
+        </div>
+
+        <p class="eyebrow">还差最后一步</p>
+        <h1 id="invite-title">输入邀请码，<br />加入讨论。</h1>
+        <p class="login-copy">
+          这是一个邀请制社区。没有邀请码可以先向邀请你的人要一个。
+        </p>
+
+        <form id="invite-form">
+          <label for="invite-code-input">邀请码</label>
+          <input
+            id="invite-code-input"
+            name="inviteCode"
+            type="text"
+            autocomplete="off"
+            autocapitalize="characters"
+            placeholder="例如：DEMO2026"
+            required
+          />
+          <p id="invite-error" class="invite-error" role="alert" hidden></p>
+          <div class="invite-actions">
+            <button class="primary-button" type="submit">加入</button>
+          </div>
+        </form>
+
+        <button id="invite-signout-button" class="text-button invite-signout" type="button">退出登录</button>
+      </section>
+    </main>
+
     <div id="app-view" class="app-shell" hidden>
       <header class="topbar">
         <a class="compact-brand" href="./" aria-label="Situational Awareness 首页">

@@ -6,6 +6,7 @@ import {
   formatRelativeTime,
   initials,
   safeAvatarUrl,
+  validateInviteCode,
   validatePost,
   validateReply,
 } from './lib.js'
@@ -17,6 +18,11 @@ const elements = {
   demoBanner: document.querySelector('#demo-banner'),
   feed: document.querySelector('#feed'),
   feedStatus: document.querySelector('#feed-status'),
+  inviteCodeInput: document.querySelector('#invite-code-input'),
+  inviteError: document.querySelector('#invite-error'),
+  inviteForm: document.querySelector('#invite-form'),
+  inviteSignoutButton: document.querySelector('#invite-signout-button'),
+  inviteView: document.querySelector('#invite-view'),
   loading: document.querySelector('#loading-view'),
   login: document.querySelector('#signed-out-view'),
   loginButton: document.querySelector('#login-button'),
@@ -36,6 +42,7 @@ let toastTimer = null
 function setView(view) {
   elements.loading.hidden = view !== 'loading'
   elements.login.hidden = view !== 'login'
+  elements.inviteView.hidden = view !== 'invite'
   elements.app.hidden = view !== 'app'
 }
 
@@ -63,6 +70,9 @@ function showToast(message, kind = 'normal') {
 
 function friendlyError(error) {
   const message = String(error?.message || error || '')
+  if (/not_authenticated/i.test(message)) {
+    return '登录状态已失效，请重新登录后再试。'
+  }
   if (/row-level security|permission denied|42501/i.test(message)) {
     return '当前账号没有操作权限。请确认使用 Google 登录并已应用数据库脚本。'
   }
@@ -254,6 +264,14 @@ async function renderSession(nextSession) {
     return
   }
 
+  const isMember = await backend.isMember(session.user.id)
+  if (!isMember) {
+    elements.inviteError.hidden = true
+    elements.inviteCodeInput.value = ''
+    setView('invite')
+    return
+  }
+
   elements.accountName.textContent = displayName(session.user)
   setView('app')
   await loadPosts()
@@ -278,6 +296,46 @@ elements.logoutButton.addEventListener('click', async () => {
     showToast(friendlyError(error), 'error')
   } finally {
     setButtonBusy(elements.logoutButton, false)
+  }
+})
+
+elements.inviteSignoutButton.addEventListener('click', async () => {
+  setButtonBusy(elements.inviteSignoutButton, true, '退出中…')
+  try {
+    await backend.signOut()
+  } catch (error) {
+    showToast(friendlyError(error), 'error')
+  } finally {
+    setButtonBusy(elements.inviteSignoutButton, false)
+  }
+})
+
+elements.inviteForm.addEventListener('submit', async (event) => {
+  event.preventDefault()
+  const result = validateInviteCode(elements.inviteCodeInput.value)
+  if (!result.ok) {
+    elements.inviteError.textContent = result.message
+    elements.inviteError.hidden = false
+    return
+  }
+
+  const button = elements.inviteForm.querySelector('button[type="submit"]')
+  setButtonBusy(button, true, '加入中…')
+  try {
+    const admitted = await backend.redeemInviteCode(result.value)
+    if (!admitted) {
+      elements.inviteError.textContent = '邀请码无效或已用完。'
+      elements.inviteError.hidden = false
+      return
+    }
+
+    elements.inviteError.hidden = true
+    await renderSession(session)
+  } catch (error) {
+    elements.inviteError.textContent = friendlyError(error)
+    elements.inviteError.hidden = false
+  } finally {
+    setButtonBusy(button, false)
   }
 })
 
@@ -315,7 +373,10 @@ async function start() {
   if (backend.isDemo) elements.loginButton.querySelector('span').textContent = '进入演示版'
 
   backend.onAuthChange((nextSession) => {
-    renderSession(nextSession).catch((error) => showToast(friendlyError(error), 'error'))
+    renderSession(nextSession).catch((error) => {
+      setView('login')
+      showToast(friendlyError(error), 'error')
+    })
   })
 
   try {
