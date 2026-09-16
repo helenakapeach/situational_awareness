@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 
-const DEMO_STORAGE_KEY = 'situational-awareness-demo-v1'
+const DEMO_STORAGE_KEY = 'situational-awareness-demo-v2'
 const DEMO_SESSION_KEY = 'situational-awareness-demo-session'
 
 const demoUser = {
@@ -23,7 +23,7 @@ function initialDemoData() {
       {
         id: 2,
         title: '老板让我接一个高曝光项目，但资源明显不够，该接吗？',
-        body: '项目能让我接触到更高层，但时间线不现实，而且没有明确的人力支持。我担心接了做砸，不接又像是在躲机会。你们会怎么判断？',
+        body: '项目能让我接触到更高层，但时间线不现实，而且没有明确的人力支持。我担心接了做砸，不接又像是在躲机会。\n\n我目前在权衡：\n\n- **接**：曝光高，但资源缺口很大\n- **不接**：保住质量，但可能被看成回避机会\n\n你们会怎么判断？',
         created_at: hoursAgo(2),
       },
       {
@@ -39,7 +39,7 @@ function initialDemoData() {
         post_id: 2,
         author_name: '林然',
         author_avatar_url: '',
-        body: '我会先把“接项目”和“接受当前资源条件”拆开。可以接，但把成功条件、依赖和缺口写成一页，当面请老板选择取舍。',
+        body: '我会先把 **接项目** 和 **接受当前资源条件** 拆开。可以接，但先写成一页请老板选择取舍：\n\n1. 成功条件是什么\n2. 缺哪些人和时间\n3. 做不到时怎么收场',
         created_at: hoursAgo(1),
       },
       {
