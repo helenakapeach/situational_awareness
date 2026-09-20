@@ -145,7 +145,7 @@
       <div class="overline">SITUATIONAL AWARENESS</div>
       <h1>色板规范</h1>
       <p class="intro">
-        四个色相，其余全是中性色：<strong>深青蓝</strong>（品牌与全部交互）·
+        四个色相，其余全是中性色：<strong>墨水蓝</strong>（品牌与全部交互）·
         <strong>琥珀</strong>（洞察与加精）· <strong>青玉</strong>（已认证）·
         <strong>砖红</strong>（仅真实风险）。界面上 95% 的面积应该只有中性色。
         所有取值来自 <code>design-tokens.css</code>，本页的色值由脚本实时读取，不会与令牌脱节。
@@ -181,12 +181,12 @@
       </div>
 
       <div class="why-item">
-        <div class="why-head"><span class="dot brand"></span>品牌色选深青蓝</div>
+        <div class="why-head"><span class="dot brand"></span>品牌色选墨水蓝</div>
         <p>
-          蓝色系保留职场产品不能丢的专业与可信。但必须避开知乎蓝与 LinkedIn 蓝：一是辨识度，用了就像在模仿；
-          二是那种亮蓝传递的是「活跃、社交、快点我」，与「冷静想清楚」正好相反。掺入青绿让它降温变沉稳，
-          而青绿关联安全感与被保护，对「匿名讲职场困境」是对的。选深不选亮还有个务实理由：
-          够深才能直接承载白字（8.31:1），做主按钮不必再调一个颜色。
+          蓝色系保留职场产品不能丢的专业与可信。知乎蓝与 LinkedIn 蓝要避开：一是辨识度，用了就像在模仿；
+          二是那种亮蓝传递的是「活跃、社交、快点我」，与「冷静想清楚」正好相反。但往青绿里躲同样错——
+          青绿读起来像医院系统和健康 app。墨水蓝更深更灰，走的是钢笔和档案。选深不选亮还有个务实理由：
+          够深才能直接承载白字，做主按钮不必再调一个颜色。
         </p>
       </div>
 
@@ -326,7 +326,7 @@
   <section>
     <h2>五 · 交互只有一个颜色</h2>
     <p class="sec-note">
-      链接、主按钮、选中态、焦点环全部用深青蓝。琥珀色<strong>不承担交互</strong>——
+      链接、主按钮、选中态、焦点环全部用墨水蓝。琥珀色<strong>不承担交互</strong>——
       它只标注「值得一读」，不代表「点这里」。破坏性操作用砖红描边，但不做实心块。
     </p>
     <div class="btn-row">
@@ -370,7 +370,7 @@
     <ul class="removed">
       <li><strong>「60% / 25% / 10% / 5%」配色比例条</strong>——暖灰与白的对比度只有 1.09，肉眼分不出，是一条无法验收的规则。改成一句能执行的话：页面用 <code>--bg</code>，卡片用 <code>--surface</code>，靠 1px <code>--border</code> 分层。</li>
       <li><strong>衬线备选方案</strong>——只保留一套无衬线。衬线仅限营销落地页，不进产品界面。</li>
-      <li><strong>独立的深色标题色</strong>——标题和正文共用 <code>--text</code>。原本的深青蓝深色现在只作为 <code>--chrome</code>（导航区表面），不再充当文字色。</li>
+      <li><strong>独立的深色标题色</strong>——标题和正文共用 <code>--text</code>。原本的品牌深色现在只作为 <code>--chrome</code>（导航区表面），不再充当文字色。</li>
       <li><strong>两个硬编码的野色</strong>——原先直接写在 CSS 里、却没进色板的 <code>#455256</code> 和 <code>#72501F</code>，已分别收进 <code>--text-soft</code> 与 <code>--insight-text</code>。</li>
       <li><strong>白字配琥珀底</strong>——旧值对比度只有 2.98。现在琥珀色永不承载文字，需要琥珀色文字时一律用 <code>--insight-text</code>。</li>
     </ul>
@@ -393,7 +393,7 @@
       ["--text-faint", "元信息：时间、计数、「自报」"],
       ["--text-on-fill", "品牌色填充块上的文字。导航区不用它"],
     ]],
-    ["品牌 · 深青蓝（唯一交互色）", [
+    ["品牌 · 墨水蓝（唯一交互色）", [
       ["--brand", "链接、主按钮、选中态、焦点环、logo"],
       ["--brand-hover", "悬停与按下加深"],
       ["--brand-tint", "选中项底色、当前导航项、当前筛选标签"],

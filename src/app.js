@@ -163,9 +163,9 @@ function makeAvatar(name, avatarUrl, anonymous = false) {
   return wrapper
 }
 
-function makeReply(reply) {
+function makeReply(reply, { highlighted = false } = {}) {
   const anonymous = Boolean(reply.is_anonymous)
-  const item = element('li', 'reply')
+  const item = element('li', highlighted ? 'reply is-insight' : 'reply')
   item.append(makeAvatar(reply.author_name, reply.author_avatar_url, anonymous))
 
   const content = element('div', 'reply-content')
@@ -320,7 +320,10 @@ function makePost(post, shouldOpen = false) {
 
   const replies = element('ol', 'reply-list')
   if (post.replies.length) {
-    post.replies.forEach((reply) => replies.append(makeReply(reply)))
+    post.replies.forEach((reply, index) => {
+      const highlighted = index === 0 && Number(reply.upvote_count) > 0
+      replies.append(makeReply(reply, { highlighted }))
+    })
   } else {
     replies.append(element('li', 'empty-replies', '还没有人回。你的判断可能就是楼主最需要的。'))
   }
