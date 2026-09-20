@@ -17,6 +17,11 @@ const backend = createBackend()
 const elements = {
   accountName: document.querySelector('#account-name'),
   app: document.querySelector('#app-view'),
+  confirmAccept: document.querySelector('#confirm-accept'),
+  confirmBody: document.querySelector('#confirm-body'),
+  confirmCancel: document.querySelector('#confirm-cancel'),
+  confirmDialog: document.querySelector('#confirm-dialog'),
+  confirmTitle: document.querySelector('#confirm-title'),
   demoBanner: document.querySelector('#demo-banner'),
   feed: document.querySelector('#feed'),
   feedStatus: document.querySelector('#feed-status'),
@@ -30,6 +35,7 @@ const elements = {
   inviteForm: document.querySelector('#invite-form'),
   inviteSignoutButton: document.querySelector('#invite-signout-button'),
   inviteView: document.querySelector('#invite-view'),
+  loadMoreButton: document.querySelector('#load-more-button'),
   loading: document.querySelector('#loading-view'),
   login: document.querySelector('#signed-out-view'),
   loginButton: document.querySelector('#login-button'),
@@ -51,9 +57,16 @@ const THEME_KEY = 'situational-awareness-theme'
 let session = null
 let loadingPosts = false
 let toastTimer = null
+let searchTimer = null
 // 搜索只筛已经取回的这批帖子，不再打一次后端
 let cachedPosts = []
+let hasMorePosts = false
 let searchQuery = ''
+
+// 回复框和编辑框都是 renderFeed 现搭的，任何一次重绘都会把它们连同里面
+// 没提交的字一起扔掉。草稿存在 DOM 之外，重绘后再填回去。
+const replyDrafts = new Map()
+const editDrafts = new Map()
 
 function showPanel(name) {
   elements.panels.forEach((panel) => {
@@ -124,6 +137,41 @@ function friendlyError(error) {
   return message || '操作失败，请稍后重试。'
 }
 
+// 长度上限只在 LIMITS 里定义一次，输入框的 maxlength 由这里贴上去，
+// 免得 HTML 和校验逻辑各写一个数字然后慢慢对不上。
+function applyLimits() {
+  elements.postTitle.minLength = LIMITS.titleMin
+  elements.postTitle.maxLength = LIMITS.titleMax
+  elements.postBody.maxLength = LIMITS.postMax
+  elements.feedbackBody.maxLength = LIMITS.feedbackMax
+}
+
+function attachCharacterCount(field, counter, max) {
+  const render = () => {
+    counter.textContent = `${field.value.length} / ${max}`
+  }
+  field.addEventListener('input', render)
+  render()
+  return render
+}
+
+function confirmAction({ title, body, confirmLabel }) {
+  elements.confirmTitle.textContent = title
+  elements.confirmBody.textContent = body
+  elements.confirmAccept.textContent = confirmLabel
+  // Esc 关闭时 returnValue 保持不变，所以先摆一个非 confirm 的值
+  elements.confirmDialog.returnValue = 'cancel'
+  elements.confirmDialog.showModal()
+
+  return new Promise((resolve) => {
+    elements.confirmDialog.addEventListener(
+      'close',
+      () => resolve(elements.confirmDialog.returnValue === 'confirm'),
+      { once: true },
+    )
+  })
+}
+
 function element(tag, className, text) {
   const node = document.createElement(tag)
   if (className) node.className = className
@@ -164,6 +212,7 @@ function makeAvatar(name, avatarUrl, anonymous = false) {
 }
 
 function makeReply(reply, { highlighted = false } = {}) {
+  const draftKey = String(reply.id)
   const anonymous = Boolean(reply.is_anonymous)
   const item = element('li', highlighted ? 'reply is-insight' : 'reply')
   item.append(makeAvatar(reply.author_name, reply.author_avatar_url, anonymous))
@@ -187,12 +236,13 @@ function makeReply(reply, { highlighted = false } = {}) {
   item.append(content)
 
   function showView() {
+    editDrafts.delete(draftKey)
     body.hidden = false
     toolbar.hidden = false
     content.querySelector('.reply-form')?.remove()
   }
 
-  function enterEdit() {
+  function enterEdit({ focus = true } = {}) {
     if (content.querySelector('.reply-form')) return
 
     body.hidden = true
@@ -202,6 +252,7 @@ function makeReply(reply, { highlighted = false } = {}) {
     const label = element('label', 'sr-only', '编辑回复')
     const textarea = document.createElement('textarea')
     const actions = element('div', 'reply-actions')
+    const count = element('span', 'character-count')
     const cancel = element('button', 'text-button', '取消')
     const save = element('button', 'secondary-button', '保存')
 
@@ -210,13 +261,15 @@ function makeReply(reply, { highlighted = false } = {}) {
     textarea.name = 'body'
     textarea.rows = 4
     textarea.maxLength = LIMITS.replyMax
-    textarea.value = reply.body
+    textarea.value = editDrafts.get(draftKey) ?? reply.body
     textarea.required = true
     cancel.type = 'button'
     save.type = 'submit'
 
+    attachCharacterCount(textarea, count, LIMITS.replyMax)
+    textarea.addEventListener('input', () => editDrafts.set(draftKey, textarea.value))
     cancel.addEventListener('click', showView)
-    actions.append(cancel, save)
+    actions.append(count, cancel, save)
     form.append(label, textarea, actions)
 
     form.addEventListener('submit', async (event) => {
@@ -231,6 +284,7 @@ function makeReply(reply, { highlighted = false } = {}) {
       setButtonBusy(save, true, '保存中…')
       try {
         await backend.updateReply(reply.id, result.value.body)
+        editDrafts.delete(draftKey)
         await loadPosts({ preserveOpenPost: String(reply.post_id) })
         showToast('回复已更新。')
       } catch (error) {
@@ -240,9 +294,15 @@ function makeReply(reply, { highlighted = false } = {}) {
     })
 
     content.append(form)
-    textarea.focus()
-    textarea.setSelectionRange(textarea.value.length, textarea.value.length)
+    if (focus) {
+      textarea.focus()
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length)
+    }
   }
+
+  // 重绘之前正在编辑的，重绘之后接着编辑。这里别抢焦点：重绘可能是
+  // 别处触发的，把页面滚到这条回复上会很突兀。
+  if (editDrafts.has(draftKey)) enterEdit({ focus: false })
 
   return item
 }
@@ -260,10 +320,17 @@ function makeReplyToolbar(reply, { onEdit }) {
   remove.type = 'button'
   edit.addEventListener('click', onEdit)
   remove.addEventListener('click', async () => {
-    if (!window.confirm('删除这条回复？赞也会一起去掉。')) return
+    const confirmed = await confirmAction({
+      title: '删除这条回复？',
+      body: '赞也会一起去掉，删掉之后没法恢复。',
+      confirmLabel: '删除',
+    })
+    if (!confirmed) return
+
     setButtonBusy(remove, true, '删除中…')
     try {
       await backend.deleteReply(reply.id)
+      editDrafts.delete(String(reply.id))
       await loadPosts({ preserveOpenPost: String(reply.post_id) })
       showToast('回复已删除。')
     } catch (error) {
@@ -332,14 +399,17 @@ function makeVoteButton(reply) {
 }
 
 function makeReplyForm(postId) {
+  const draftKey = String(postId)
+  const draft = replyDrafts.get(draftKey)
   const form = element('form', 'reply-form')
   const label = element('label', 'sr-only', '写下你的回复')
   const textarea = document.createElement('textarea')
   const actions = element('div', 'reply-actions')
   const meta = element('div', 'reply-meta')
+  const count = element('span', 'character-count')
   const anonymousLabel = element('label', 'checkbox-line')
   const anonymousInput = document.createElement('input')
-  const identity = element('span', 'reply-identity', replyIdentityText(false))
+  const identity = element('span', 'reply-identity')
   const button = element('button', 'secondary-button', '发布回复')
 
   label.htmlFor = `reply-${postId}`
@@ -349,20 +419,35 @@ function makeReplyForm(postId) {
   textarea.maxLength = LIMITS.replyMax
   textarea.placeholder = '分享你的判断、经历或一个值得追问的问题…'
   textarea.required = true
+  textarea.value = draft?.body || ''
 
   anonymousInput.type = 'checkbox'
   anonymousInput.name = 'anonymous'
+  anonymousInput.checked = Boolean(draft?.anonymous)
   anonymousLabel.append(anonymousInput, document.createTextNode('匿名回复'))
   identity.id = `reply-identity-${postId}`
+  identity.textContent = replyIdentityText(anonymousInput.checked)
   anonymousInput.setAttribute('aria-describedby', identity.id)
+
+  function rememberDraft() {
+    if (textarea.value || anonymousInput.checked) {
+      replyDrafts.set(draftKey, { body: textarea.value, anonymous: anonymousInput.checked })
+    } else {
+      replyDrafts.delete(draftKey)
+    }
+  }
+
+  attachCharacterCount(textarea, count, LIMITS.replyMax)
+  textarea.addEventListener('input', rememberDraft)
   anonymousInput.addEventListener('change', () => {
     identity.textContent = replyIdentityText(anonymousInput.checked)
+    rememberDraft()
   })
 
   button.type = 'submit'
 
   meta.append(anonymousLabel, identity)
-  actions.append(meta, button)
+  actions.append(meta, count, button)
   form.append(label, textarea, actions)
 
   form.addEventListener('submit', async (event) => {
@@ -378,6 +463,7 @@ function makeReplyForm(postId) {
     try {
       await backend.createReply(postId, result.value)
       textarea.value = ''
+      replyDrafts.delete(draftKey)
       await loadPosts({ preserveOpenPost: String(postId) })
       showToast(result.value.is_anonymous ? '已匿名回复。' : '回复已发布。')
     } catch (error) {
@@ -405,10 +491,15 @@ function makePost(post, shouldOpen = false) {
   const title = element('h3', 'post-title', post.title)
   const body = makeMarkdownBody('post-body', post.body)
 
+  // 有草稿却折叠起来，等于把它藏没了
+  const hasDraft =
+    replyDrafts.has(String(post.id)) ||
+    post.replies.some((reply) => editDrafts.has(String(reply.id)))
+
   const thread = document.createElement('details')
   thread.className = 'thread'
   thread.dataset.postId = String(post.id)
-  thread.open = shouldOpen
+  thread.open = shouldOpen || hasDraft
 
   const summary = document.createElement('summary')
   summary.textContent = post.replies.length ? `${post.replies.length} 条回复` : '还没有回复'
@@ -447,6 +538,7 @@ function renderFeed(previouslyOpen = new Set()) {
     : cachedPosts
 
   elements.feed.replaceChildren()
+  elements.loadMoreButton.hidden = !hasMorePosts
 
   if (visible.length) {
     visible.forEach((post) =>
@@ -459,7 +551,13 @@ function renderFeed(previouslyOpen = new Set()) {
   if (query) {
     empty.append(
       element('strong', '', '没有匹配的讨论。'),
-      element('p', '', '换个说法，或者清空搜索框看全部。'),
+      element(
+        'p',
+        '',
+        hasMorePosts
+          ? '搜索只看已经加载的帖子。换个说法，或者先加载更多。'
+          : '换个说法，或者清空搜索框看全部。',
+      ),
     )
   } else {
     empty.append(
@@ -483,7 +581,10 @@ async function loadPosts({ preserveOpenPost } = {}) {
   elements.refreshButton.disabled = true
 
   try {
-    cachedPosts = await backend.listPosts()
+    const page = await backend.listPosts()
+    cachedPosts = page
+    // 取满一页就假定后面还有；多问一次的代价比漏掉内容小
+    hasMorePosts = page.length === LIMITS.pageSize
     renderFeed(previouslyOpen)
     elements.feedStatus.hidden = true
   } catch (error) {
@@ -497,6 +598,24 @@ async function loadPosts({ preserveOpenPost } = {}) {
   }
 }
 
+async function loadMorePosts() {
+  if (loadingPosts || !cachedPosts.length) return
+  loadingPosts = true
+  setButtonBusy(elements.loadMoreButton, true, '加载中…')
+
+  try {
+    const page = await backend.listPosts({ before: cachedPosts.at(-1).created_at })
+    cachedPosts = [...cachedPosts, ...page]
+    hasMorePosts = page.length === LIMITS.pageSize
+    renderFeed(openPostIds())
+  } catch (error) {
+    showToast(friendlyError(error), 'error')
+  } finally {
+    loadingPosts = false
+    setButtonBusy(elements.loadMoreButton, false)
+  }
+}
+
 async function renderSession(nextSession) {
   session = nextSession
   if (!session) {
@@ -504,6 +623,9 @@ async function renderSession(nextSession) {
     elements.feed.replaceChildren()
     elements.feedbackDialog.close()
     cachedPosts = []
+    hasMorePosts = false
+    replyDrafts.clear()
+    editDrafts.clear()
     searchQuery = ''
     elements.searchInput.value = ''
     showPanel('feed')
@@ -588,6 +710,11 @@ elements.inviteForm.addEventListener('submit', async (event) => {
 
 elements.refreshButton.addEventListener('click', () => loadPosts())
 
+elements.loadMoreButton.addEventListener('click', () => loadMorePosts())
+
+elements.confirmCancel.addEventListener('click', () => elements.confirmDialog.close('cancel'))
+elements.confirmAccept.addEventListener('click', () => elements.confirmDialog.close('confirm'))
+
 elements.themeToggles.forEach((button) => button.addEventListener('click', toggleTheme))
 
 elements.panelLinks.forEach((link) => {
@@ -598,7 +725,9 @@ elements.searchInput.addEventListener('input', () => {
   searchQuery = elements.searchInput.value
   // 只有讨论广场里有可搜的东西，所以搜索时把人带回那一栏
   showPanel('feed')
-  renderFeed(openPostIds())
+  // 每次都要重建整个列表，所以别一个字符跑一次
+  window.clearTimeout(searchTimer)
+  searchTimer = window.setTimeout(() => renderFeed(openPostIds()), 160)
 })
 
 elements.feedbackButton.addEventListener('click', () => {
@@ -632,9 +761,11 @@ elements.feedbackForm.addEventListener('submit', async (event) => {
   }
 })
 
-elements.postBody.addEventListener('input', () => {
-  elements.postCharacterCount.textContent = `${elements.postBody.value.length} / ${LIMITS.postMax}`
-})
+const renderPostCount = attachCharacterCount(
+  elements.postBody,
+  elements.postCharacterCount,
+  LIMITS.postMax,
+)
 
 elements.postForm.addEventListener('submit', async (event) => {
   event.preventDefault()
@@ -649,7 +780,7 @@ elements.postForm.addEventListener('submit', async (event) => {
   try {
     await backend.createPost(result.value)
     elements.postForm.reset()
-    elements.postCharacterCount.textContent = `0 / ${LIMITS.postMax}`
+    renderPostCount()
     await loadPosts()
     showToast('已匿名发布。')
   } catch (error) {
@@ -660,6 +791,7 @@ elements.postForm.addEventListener('submit', async (event) => {
 })
 
 async function start() {
+  applyLimits()
   elements.demoBanner.hidden = !backend.isDemo
   if (backend.isDemo) elements.loginButton.querySelector('span').textContent = '进入演示版'
 

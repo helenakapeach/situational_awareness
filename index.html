@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="Situational Awareness — 在美职场人的邀请制圈子"
+      content="知局 Situational Awareness — 在美职场人的邀请制圈子"
     />
     <meta name="theme-color" content="#335C84" />
-    <title>Situational Awareness · 讨论广场</title>
+    <title>知局 · 讨论广场</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23335C84'/%3E%3Cpath d='M16 5l4 11-4 11-4-11z' fill='%23FFFFFF'/%3E%3Ccircle cx='16' cy='16' r='2' fill='%23BB8337'/%3E%3C/svg%3E" />
     <link rel="stylesheet" href="/design-tokens.css" />
     <script>
@@ -22,17 +22,33 @@
   <body>
     <noscript>这个页面需要开启 JavaScript。</noscript>
 
+    <!-- logo 和主题图标在登录页、邀请页、加载页、顶栏都要用，只在这里画一次。
+         描边和填充写成表现属性而不是 CSS 规则：作者样式选不进 <use> 的影子树，
+         但 CSS 变量能继承进去，所以 var(--…) 仍然跟着主题走。 -->
+    <svg class="icon-sprite" aria-hidden="true" focusable="false">
+      <defs>
+        <g id="icon-brand-mark">
+          <circle cx="20" cy="20" r="16" fill="none" stroke="var(--text-on-fill)" stroke-width="1.6" />
+          <path d="M20 8l4 12-4 12-4-12z" fill="var(--text-on-fill)" />
+          <circle cx="20" cy="20" r="2" fill="var(--insight)" />
+        </g>
+        <g id="icon-moon">
+          <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a7 7 0 1 0 10.5 10.5Z" />
+        </g>
+        <g id="icon-sun">
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2.5v2M12 19.5v2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M2.5 12h2M19.5 12h2M5.2 18.8l1.4-1.4M17.4 6.6l1.4-1.4" />
+        </g>
+      </defs>
+    </svg>
+
     <div id="demo-banner" class="demo-banner" hidden>
       本地演示模式 · 内容只保存在这台浏览器，不会进入正式社区
     </div>
 
     <div id="loading-view" class="center-view" aria-live="polite">
       <div class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 40 40" role="img">
-          <circle cx="20" cy="20" r="16" />
-          <path d="M20 8l4 12-4 12-4-12z" />
-          <circle class="brand-center" cx="20" cy="20" r="2" />
-        </svg>
+        <svg viewBox="0 0 40 40"><use href="#icon-brand-mark" /></svg>
       </div>
       <p>正在进入讨论广场…</p>
     </div>
@@ -41,25 +57,16 @@
       <section class="login-card" aria-labelledby="login-title">
         <div class="login-brand">
           <div class="brand-mark" aria-hidden="true">
-            <svg viewBox="0 0 40 40">
-              <circle cx="20" cy="20" r="16" />
-              <path d="M20 8l4 12-4 12-4-12z" />
-              <circle class="brand-center" cx="20" cy="20" r="2" />
-            </svg>
+            <svg viewBox="0 0 40 40"><use href="#icon-brand-mark" /></svg>
           </div>
           <div>
-            <div class="brand-line">在美职场人的邀请制圈子</div>
-            <div class="brand-name">Situational Awareness</div>
+            <div class="brand-wordmark">知局<span class="brand-latin">Situational Awareness</span></div>
+            <div class="brand-descriptor">在美职场人的邀请制圈子</div>
           </div>
 
           <button class="icon-button theme-toggle" type="button" aria-label="切换深色或浅色模式">
-            <svg class="theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a7 7 0 1 0 10.5 10.5Z" />
-            </svg>
-            <svg class="theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="12" cy="12" r="4" />
-              <path d="M12 2.5v2M12 19.5v2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M2.5 12h2M19.5 12h2M5.2 18.8l1.4-1.4M17.4 6.6l1.4-1.4" />
-            </svg>
+            <svg class="theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-moon" /></svg>
+            <svg class="theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-sun" /></svg>
           </button>
         </div>
 
@@ -81,33 +88,21 @@
       <section class="login-card" aria-labelledby="invite-title">
         <div class="login-brand">
           <div class="brand-mark" aria-hidden="true">
-            <svg viewBox="0 0 40 40">
-              <circle cx="20" cy="20" r="16" />
-              <path d="M20 8l4 12-4 12-4-12z" />
-              <circle class="brand-center" cx="20" cy="20" r="2" />
-            </svg>
+            <svg viewBox="0 0 40 40"><use href="#icon-brand-mark" /></svg>
           </div>
           <div>
-            <div class="brand-line">在美职场人的邀请制圈子</div>
-            <div class="brand-name">Situational Awareness</div>
+            <div class="brand-wordmark">知局<span class="brand-latin">Situational Awareness</span></div>
+            <div class="brand-descriptor">在美职场人的邀请制圈子</div>
           </div>
 
           <button class="icon-button theme-toggle" type="button" aria-label="切换深色或浅色模式">
-            <svg class="theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a7 7 0 1 0 10.5 10.5Z" />
-            </svg>
-            <svg class="theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="12" cy="12" r="4" />
-              <path d="M12 2.5v2M12 19.5v2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M2.5 12h2M19.5 12h2M5.2 18.8l1.4-1.4M17.4 6.6l1.4-1.4" />
-            </svg>
+            <svg class="theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-moon" /></svg>
+            <svg class="theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-sun" /></svg>
           </button>
         </div>
 
         <p class="eyebrow">还差最后一步</p>
-        <h1 id="invite-title">输入邀请码，<br />加入讨论。</h1>
-        <p class="login-copy">
-          这是一个邀请制圈子。没有邀请码可以先向邀请你的人要一个。
-        </p>
+        <h1 id="invite-title" class="step-title">输入邀请码，加入讨论。</h1>
 
         <form id="invite-form">
           <label for="invite-code-input">邀请码</label>
@@ -117,7 +112,6 @@
             type="text"
             autocomplete="off"
             autocapitalize="characters"
-            placeholder="例如：DEMO2026"
             required
           />
           <p id="invite-error" class="invite-error" role="alert" hidden></p>
@@ -132,15 +126,11 @@
 
     <div id="app-view" class="app-shell" hidden>
       <header class="topbar">
-        <a class="compact-brand" href="./" aria-label="Situational Awareness 首页">
+        <a class="compact-brand" href="./" aria-label="知局 首页">
           <span class="brand-mark small" aria-hidden="true">
-            <svg viewBox="0 0 40 40">
-              <circle cx="20" cy="20" r="16" />
-              <path d="M20 8l4 12-4 12-4-12z" />
-              <circle class="brand-center" cx="20" cy="20" r="2" />
-            </svg>
+            <svg viewBox="0 0 40 40"><use href="#icon-brand-mark" /></svg>
           </span>
-          <strong>Situational<br />Awareness</strong>
+          <strong>知局<span class="brand-latin">Situational Awareness</span></strong>
         </a>
 
         <nav class="tabbar" aria-label="模块导航">
@@ -175,13 +165,8 @@
             </svg>
           </button>
           <button class="icon-button theme-toggle" type="button" aria-label="切换深色或浅色模式">
-            <svg class="theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a7 7 0 1 0 10.5 10.5Z" />
-            </svg>
-            <svg class="theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="12" cy="12" r="4" />
-              <path d="M12 2.5v2M12 19.5v2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M2.5 12h2M19.5 12h2M5.2 18.8l1.4-1.4M17.4 6.6l1.4-1.4" />
-            </svg>
+            <svg class="theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-moon" /></svg>
+            <svg class="theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-sun" /></svg>
           </button>
         </div>
       </header>
@@ -201,8 +186,6 @@
               id="post-title"
               name="title"
               type="text"
-              minlength="3"
-              maxlength="120"
               autocomplete="off"
               placeholder="例如：该不该接下这个跨部门项目？"
               required
@@ -213,13 +196,12 @@
               id="post-body"
               name="body"
               rows="3"
-              maxlength="4000"
               placeholder="补充必要的背景、你已经考虑过的选项，以及真正卡住你的地方。"
               required
             ></textarea>
 
             <div class="composer-actions">
-              <span id="post-character-count" class="character-count">0 / 4000</span>
+              <span id="post-character-count" class="character-count"></span>
               <button class="primary-button" type="submit">匿名发布</button>
             </div>
           </form>
@@ -234,7 +216,10 @@
           </div>
 
           <div id="feed-status" class="feed-status" role="status">正在加载讨论…</div>
-          <div id="feed" class="feed" aria-live="polite"></div>
+          <div id="feed" class="feed"></div>
+          <div class="load-more-row">
+            <button id="load-more-button" class="secondary-button" type="button" hidden>加载更多</button>
+          </div>
         </section>
 
         <section id="panel-library" class="panel" aria-label="案例库" hidden>
@@ -298,7 +283,7 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-    <dialog id="feedback-dialog" class="feedback-dialog" aria-labelledby="feedback-title">
+    <dialog id="feedback-dialog" class="modal-dialog" aria-labelledby="feedback-title">
       <form id="feedback-form">
         <h2 id="feedback-title">有什么想告诉我们的？</h2>
         <label class="sr-only" for="feedback-body">反馈</label>
@@ -306,7 +291,6 @@
           id="feedback-body"
           name="body"
           rows="5"
-          maxlength="2000"
           placeholder="哪里别扭、卡住了，或你希望这里变成什么样。"
           required
         ></textarea>
@@ -315,6 +299,15 @@
           <button class="primary-button" type="submit">发送</button>
         </div>
       </form>
+    </dialog>
+
+    <dialog id="confirm-dialog" class="modal-dialog" aria-labelledby="confirm-title">
+      <h2 id="confirm-title"></h2>
+      <p id="confirm-body" class="confirm-body"></p>
+      <div class="composer-actions">
+        <button id="confirm-cancel" class="text-button" type="button">取消</button>
+        <button id="confirm-accept" class="primary-button is-risk" type="button"></button>
+      </div>
     </dialog>
 
     <script type="module" src="/src/app.js"></script>

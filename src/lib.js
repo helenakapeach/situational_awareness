@@ -4,6 +4,7 @@ export const LIMITS = Object.freeze({
   postMax: 4000,
   replyMax: 2000,
   feedbackMax: 2000,
+  pageSize: 20,
 })
 
 export function normalizeText(value) {

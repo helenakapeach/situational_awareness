@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { normalizeInviteCode, sortReplies, withVoteState } from './lib.js'
+import { LIMITS, normalizeInviteCode, sortReplies, withVoteState } from './lib.js'
 
 const DEMO_STORAGE_KEY = 'situational-awareness-demo-v3'
 const DEMO_SESSION_KEY = 'situational-awareness-demo-session'
@@ -182,12 +182,18 @@ export function createBackend() {
       return Boolean(data)
     },
 
-    async listPosts() {
-      const { data: posts, error: postsError } = await supabase
+    // 游标用 created_at 而不是 offset：翻页过程中有人发帖也不会让某一条
+    // 被挤到下一页而漏掉，或者重复出现一次。
+    async listPosts({ before = null } = {}) {
+      let query = supabase
         .from('posts')
         .select('id,title,body,created_at')
         .order('created_at', { ascending: false })
-        .limit(50)
+        .limit(LIMITS.pageSize)
+
+      if (before) query = query.lt('created_at', before)
+
+      const { data: posts, error: postsError } = await query
 
       if (postsError) throw postsError
       if (!posts.length) return []
@@ -323,7 +329,7 @@ function createDemoBackend() {
       return true
     },
 
-    async listPosts() {
+    async listPosts({ before = null } = {}) {
       const data = readData()
       const likedIds = new Set(
         (data.reply_votes || [])
@@ -331,7 +337,13 @@ function createDemoBackend() {
           .map((vote) => Number(vote.reply_id)),
       )
 
+      const cutoff = before ? new Date(before).getTime() : null
+
       return data.posts
+        .slice()
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+        .filter((post) => cutoff === null || new Date(post.created_at).getTime() < cutoff)
+        .slice(0, LIMITS.pageSize)
         .map((post) => ({
           ...post,
           replies: sortReplies(
@@ -346,8 +358,6 @@ function createDemoBackend() {
               }),
           ),
         }))
-        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-        .slice(0, 50)
     },
 
     async createPost(post) {
