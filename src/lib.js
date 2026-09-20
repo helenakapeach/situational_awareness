@@ -122,6 +122,26 @@ export function initials(name) {
   return cleanName.slice(0, 2).toUpperCase()
 }
 
+export function excerptPlain(source, max = 48) {
+  const text = String(source ?? '')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/[#>`_~]+/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/([\u3400-\u9FFF])\s+([\u3400-\u9FFF])/g, '$1$2')
+    .trim()
+  const sentence = text.split(/[。！？]/)[0].trim() || text
+  const chars = [...sentence]
+  if (chars.length > max) {
+    return `${chars.slice(0, max).join('').trim()}…`
+  }
+  const rest = text.slice(sentence.length).replace(/[。！？\s]+/g, '')
+  return rest ? `${sentence}…` : sentence
+}
+
 export function compareReplies(a, b) {
   const voteDiff = (Number(b?.upvote_count) || 0) - (Number(a?.upvote_count) || 0)
   if (voteDiff !== 0) return voteDiff
@@ -139,12 +159,10 @@ export function sortReplies(replies) {
   return [...(replies || [])].sort(compareReplies)
 }
 
-export function withVoteState(reply, liked) {
+export function withVoteState(item, liked) {
   return {
-    ...reply,
-    upvote_count: Math.max(0, Number(reply.upvote_count) || 0),
+    ...item,
+    upvote_count: Math.max(0, Number(item.upvote_count) || 0),
     liked_by_me: Boolean(liked),
-    is_mine: Boolean(reply?.is_mine),
-    updated_at: reply?.updated_at || null,
   }
 }

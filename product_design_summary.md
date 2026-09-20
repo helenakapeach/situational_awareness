@@ -26,6 +26,7 @@
 - 发帖始终匿名：`posts.author_id` 对 Data API 无 SELECT，不是前端隐藏
 - 回复默认真名（Google 显示名），可选匿名；匿名回复由库层剥掉身份
 - 回复点赞（一人一赞可取消），帖内按赞数降序、同分按时间升序
+- 帖子点赞（一人一赞可取消），表示「好问题」；广场仍按时间排，不按赞数重排
 - 帖子和回复的轻量 Markdown（去 HTML，图片降级为 alt，链接仅 http/https/mailto）
 - 登录后 topbar 反馈通道（客户端只能 insert，团队在 SQL 里读）
 - 顶栏导航外壳：讨论广场 / 案例库 / 圈子 / 饭局 四个 tab，右上角私信 / 我，外加对已取回帖子的客户端搜索和深浅色切换。**只有讨论广场是真的**——其余四个是空状态占位，没有建表、没有后端、没有路由，不要当成已完成的模块
@@ -96,9 +97,10 @@
 |---|---|
 | `invite_codes` | code（存大写）, created_by, is_active, max_uses（可选）, used_count |
 | `members` | 邀请码兑换后写入；帖子/回复的 RLS 要求既是 Google 登录又是 member |
-| `posts` | author_id（客户端不可读）, title, body。没有 category / is_anonymous / 帖级点赞——发帖在产品上就是匿名 |
+| `posts` | author_id（客户端不可读）, title, body, upvote_count。没有 category / is_anonymous——发帖在产品上就是匿名 |
 | `replies` | post_id, author_id（客户端不可读）, body, author_name, author_avatar_url, is_anonymous, upvote_count |
 | `reply_votes` | user_id, reply_id；配合 `toggle_reply_vote()` |
+| `post_votes` | user_id, post_id；配合 `toggle_post_vote()`。含义是「好问题」，不是帖级加精 |
 | `feedback` | author_id（客户端不可读）, body, created_at；只允许 insert |
 
 ### 以后才建（不要提前）

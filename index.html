@@ -130,7 +130,7 @@
           <span class="brand-mark small" aria-hidden="true">
             <svg viewBox="0 0 40 40"><use href="#icon-brand-mark" /></svg>
           </span>
-          <strong>知局<span class="brand-latin">Situational Awareness</span></strong>
+          <strong>知局</strong>
         </a>
 
         <nav class="tabbar" aria-label="模块导航">
@@ -179,30 +179,42 @@
           </header>
 
           <form id="post-form" class="composer-card">
-            <h2>最近遇到什么事了？</h2>
+            <button
+              type="button"
+              id="composer-toggle"
+              class="composer-toggle"
+              aria-expanded="false"
+              aria-controls="composer-fields"
+            >
+              <span id="composer-toggle-label">最近遇到什么事了？</span>
+              <span id="composer-hint" class="composer-hint">匿名发布</span>
+            </button>
 
-            <label for="post-title">一句话标题</label>
-            <input
-              id="post-title"
-              name="title"
-              type="text"
-              autocomplete="off"
-              placeholder="例如：该不该接下这个跨部门项目？"
-              required
-            />
+            <div id="composer-fields" hidden>
+              <h2 class="composer-heading">最近遇到什么事了？</h2>
+              <label for="post-title">一句话标题</label>
+              <input
+                id="post-title"
+                name="title"
+                type="text"
+                autocomplete="off"
+                placeholder="例如：该不该接下这个跨部门项目？"
+                required
+              />
 
-            <label for="post-body">具体发生了什么？</label>
-            <textarea
-              id="post-body"
-              name="body"
-              rows="3"
-              placeholder="补充必要的背景、你已经考虑过的选项，以及真正卡住你的地方。"
-              required
-            ></textarea>
+              <label for="post-body">具体发生了什么？</label>
+              <textarea
+                id="post-body"
+                name="body"
+                rows="3"
+                placeholder="补充必要的背景、你已经考虑过的选项，以及真正卡住你的地方。"
+                required
+              ></textarea>
 
-            <div class="composer-actions">
-              <span id="post-character-count" class="character-count"></span>
-              <button class="primary-button" type="submit">匿名发布</button>
+              <div class="composer-actions">
+                <span id="post-character-count" class="character-count"></span>
+                <button class="primary-button" type="submit">匿名发布</button>
+              </div>
             </div>
           </form>
 
@@ -216,7 +228,7 @@
           </div>
 
           <div id="feed-status" class="feed-status" role="status">正在加载讨论…</div>
-          <div id="feed" class="feed"></div>
+          <div id="feed"></div>
           <div class="load-more-row">
             <button id="load-more-button" class="secondary-button" type="button" hidden>加载更多</button>
           </div>

@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import {
   displayName,
+  excerptPlain,
   formatRelativeTime,
   initials,
   normalizeInviteCode,
@@ -91,20 +92,18 @@ test('replies sort by upvote count then oldest first', () => {
   assert.equal(replies[0].id, 2)
 })
 
-test('vote state clamps negative counts and coerces liked / is_mine to booleans', () => {
+test('vote state clamps negative counts and coerces liked to a boolean', () => {
   assert.deepEqual(withVoteState({ id: 1, upvote_count: 2, is_mine: true, updated_at: '2026-09-19T12:00:00Z' }, true), {
     id: 1,
     upvote_count: 2,
-    liked_by_me: true,
     is_mine: true,
     updated_at: '2026-09-19T12:00:00Z',
+    liked_by_me: true,
   })
   assert.deepEqual(withVoteState({ id: 2, upvote_count: -3 }, undefined), {
     id: 2,
     upvote_count: 0,
     liked_by_me: false,
-    is_mine: false,
-    updated_at: null,
   })
 })
 
@@ -146,6 +145,14 @@ test('markdown only allows http(s) and mailto links', () => {
 
   const html = renderMarkdown('[a](//evil.example) [b](vbscript:x)')
   assert.doesNotMatch(html, /href="/)
+})
+
+test('plain excerpts strip markdown and respect unicode length', () => {
+  assert.equal(excerptPlain('我会先把 **接项目** 拆开。'), '我会先把接项目拆开')
+  assert.equal(excerptPlain('先验证。不急着承诺。'), '先验证…')
+  assert.equal(excerptPlain('[看这里](https://example.com) 就行'), '看这里就行')
+  assert.equal(excerptPlain('一二三四五', 3), '一二三…')
+  assert.equal(excerptPlain('   '), '')
 })
 
 test('markdown headings do not outrank the post title', () => {

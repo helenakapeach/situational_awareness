@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { LIMITS, normalizeInviteCode, sortReplies, withVoteState } from './lib.js'
 
-const DEMO_STORAGE_KEY = 'situational-awareness-demo-v3'
+const DEMO_STORAGE_KEY = 'situational-awareness-demo-v4'
 const DEMO_SESSION_KEY = 'situational-awareness-demo-session'
 const DEMO_MEMBER_KEY = 'situational-awareness-demo-member'
 const DEMO_INVITE_CODE = 'DEMO2026'
@@ -30,12 +30,14 @@ function initialDemoData() {
         title: '老板让我接一个高曝光项目，但资源明显不够，该接吗？',
         body: '项目能让我接触到更高层，但时间线不现实，而且没有明确的人力支持。我担心接了做砸，不接又像是在躲机会。\n\n我目前在权衡：\n\n- **接**：曝光高，但资源缺口很大\n- **不接**：保住质量，但可能被看成回避机会\n\n你们会怎么判断？',
         created_at: hoursAgo(2),
+        upvote_count: 3,
       },
       {
         id: 1,
         title: '如何告诉同事：他的方案方向可能从一开始就错了？',
         body: '我们关系不错，但他已经在这个方案上投入很多。我有一些用户数据支持不同方向，不想让反馈听起来像是在否定他本人。',
         created_at: hoursAgo(27),
+        upvote_count: 5,
       },
     ],
     replies: [
@@ -103,6 +105,16 @@ function initialDemoData() {
       { reply_id: 4, user_id: 'seed-d' },
       { reply_id: 4, user_id: 'seed-e' },
       { reply_id: 4, user_id: 'seed-f' },
+    ],
+    post_votes: [
+      { post_id: 2, user_id: 'seed-a' },
+      { post_id: 2, user_id: 'seed-b' },
+      { post_id: 2, user_id: 'seed-c' },
+      { post_id: 1, user_id: 'seed-d' },
+      { post_id: 1, user_id: 'seed-e' },
+      { post_id: 1, user_id: 'seed-f' },
+      { post_id: 1, user_id: 'seed-g' },
+      { post_id: 1, user_id: 'demo-user' },
     ],
   }
 }
@@ -187,7 +199,7 @@ export function createBackend() {
     async listPosts({ before = null } = {}) {
       let query = supabase
         .from('posts')
-        .select('id,title,body,created_at')
+        .select('id,title,body,created_at,upvote_count,post_votes(post_id)')
         .order('created_at', { ascending: false })
         .limit(LIMITS.pageSize)
 
@@ -212,8 +224,8 @@ export function createBackend() {
         repliesByPost.get(key).push(withVoteState(reply, reply_votes && reply_votes.length > 0))
       }
 
-      return posts.map((post) => ({
-        ...post,
+      return posts.map(({ post_votes, ...post }) => ({
+        ...withVoteState(post, post_votes && post_votes.length > 0),
         replies: sortReplies(repliesByPost.get(String(post.id)) || []),
       }))
     },
@@ -257,6 +269,11 @@ export function createBackend() {
 
     async toggleReplyVote(replyId) {
       const { error } = await supabase.rpc('toggle_reply_vote', { p_reply_id: replyId })
+      if (error) throw error
+    },
+
+    async togglePostVote(postId) {
+      const { error } = await supabase.rpc('toggle_post_vote', { p_post_id: postId })
       if (error) throw error
     },
   }
@@ -331,10 +348,15 @@ function createDemoBackend() {
 
     async listPosts({ before = null } = {}) {
       const data = readData()
-      const likedIds = new Set(
+      const likedReplyIds = new Set(
         (data.reply_votes || [])
           .filter((vote) => vote.user_id === demoUser.id)
           .map((vote) => Number(vote.reply_id)),
+      )
+      const likedPostIds = new Set(
+        (data.post_votes || [])
+          .filter((vote) => vote.user_id === demoUser.id)
+          .map((vote) => Number(vote.post_id)),
       )
 
       const cutoff = before ? new Date(before).getTime() : null
@@ -345,7 +367,7 @@ function createDemoBackend() {
         .filter((post) => cutoff === null || new Date(post.created_at).getTime() < cutoff)
         .slice(0, LIMITS.pageSize)
         .map((post) => ({
-          ...post,
+          ...withVoteState(post, likedPostIds.has(Number(post.id))),
           replies: sortReplies(
             data.replies
               .filter((reply) => String(reply.post_id) === String(post.id))
@@ -353,7 +375,7 @@ function createDemoBackend() {
                 const { author_id, ...rest } = reply
                 return withVoteState(
                   { ...rest, is_mine: author_id === demoUser.id },
-                  likedIds.has(Number(reply.id)),
+                  likedReplyIds.has(Number(reply.id)),
                 )
               }),
           ),
@@ -362,7 +384,12 @@ function createDemoBackend() {
 
     async createPost(post) {
       const data = readData()
-      data.posts.unshift({ id: data.nextPostId++, ...post, created_at: new Date().toISOString() })
+      data.posts.unshift({
+        id: data.nextPostId++,
+        ...post,
+        upvote_count: 0,
+        created_at: new Date().toISOString(),
+      })
       writeData(data)
     },
 
@@ -413,6 +440,28 @@ function createDemoBackend() {
       } else {
         data.reply_votes.push({ reply_id: reply.id, user_id: demoUser.id })
         reply.upvote_count = (Number(reply.upvote_count) || 0) + 1
+      }
+
+      writeData(data)
+    },
+
+    async togglePostVote(postId) {
+      const data = readData()
+      if (!Array.isArray(data.post_votes)) data.post_votes = []
+
+      const post = data.posts.find((item) => String(item.id) === String(postId))
+      if (!post) throw new Error('这条讨论已经不存在。')
+
+      const existingAt = data.post_votes.findIndex(
+        (vote) => String(vote.post_id) === String(postId) && vote.user_id === demoUser.id,
+      )
+
+      if (existingAt >= 0) {
+        data.post_votes.splice(existingAt, 1)
+        post.upvote_count = Math.max(0, (Number(post.upvote_count) || 0) - 1)
+      } else {
+        data.post_votes.push({ post_id: post.id, user_id: demoUser.id })
+        post.upvote_count = (Number(post.upvote_count) || 0) + 1
       }
 
       writeData(data)

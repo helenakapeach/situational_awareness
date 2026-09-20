@@ -3,6 +3,7 @@ import { createBackend } from './backend.js'
 import {
   LIMITS,
   displayName,
+  excerptPlain,
   formatRelativeTime,
   initials,
   safeAvatarUrl,
@@ -42,6 +43,10 @@ const elements = {
   logoutButton: document.querySelector('#logout-button'),
   panelLinks: document.querySelectorAll('.panel-link'),
   panels: document.querySelectorAll('.panel'),
+  composerFields: document.querySelector('#composer-fields'),
+  composerHint: document.querySelector('#composer-hint'),
+  composerToggle: document.querySelector('#composer-toggle'),
+  composerToggleLabel: document.querySelector('#composer-toggle-label'),
   postBody: document.querySelector('#post-body'),
   postCharacterCount: document.querySelector('#post-character-count'),
   postForm: document.querySelector('#post-form'),
@@ -309,7 +314,7 @@ function makeReply(reply, { highlighted = false } = {}) {
 
 function makeReplyToolbar(reply, { onEdit }) {
   const toolbar = element('div', 'reply-toolbar')
-  toolbar.append(makeVoteButton(reply))
+  toolbar.append(makeReplyVoteButton(reply))
 
   if (!reply.is_mine) return toolbar
 
@@ -358,18 +363,46 @@ function makeThumbsUpIcon() {
   return svg
 }
 
-function makeVoteButton(reply) {
-  let liked = Boolean(reply.liked_by_me)
-  let count = Math.max(0, Number(reply.upvote_count) || 0)
+function rememberVote(target, liked, count) {
+  cachedPosts = cachedPosts.map((post) => {
+    if (target.postId != null && String(post.id) === String(target.postId)) {
+      return { ...post, liked_by_me: liked, upvote_count: count }
+    }
+    if (target.replyId != null) {
+      return {
+        ...post,
+        replies: post.replies.map((reply) =>
+          String(reply.id) === String(target.replyId)
+            ? { ...reply, liked_by_me: liked, upvote_count: count }
+            : reply,
+        ),
+      }
+    }
+    return post
+  })
+}
+
+function makeVoteButton({ likedByMe, upvoteCount, onToggle, remember, question = false }) {
+  let liked = Boolean(likedByMe)
+  let count = Math.max(0, Number(upvoteCount) || 0)
   const button = document.createElement('button')
   const countLabel = element('span', 'vote-count', String(count))
   button.type = 'button'
-  button.className = 'vote-button'
+  button.className = question ? 'vote-button is-question' : 'vote-button'
   button.append(makeThumbsUpIcon(), countLabel)
 
   function render() {
     button.setAttribute('aria-pressed', liked ? 'true' : 'false')
-    button.setAttribute('aria-label', liked ? `取消点赞，当前 ${count} 人点赞` : `点赞，当前 ${count} 人点赞`)
+    button.setAttribute(
+      'aria-label',
+      question
+        ? liked
+          ? `取消「好问题」，当前 ${count} 人觉得这是好问题`
+          : `认为这是好问题，当前 ${count} 人觉得这是好问题`
+        : liked
+          ? `取消点赞，当前 ${count} 人点赞`
+          : `点赞，当前 ${count} 人点赞`,
+    )
     countLabel.textContent = String(count)
   }
   render()
@@ -384,7 +417,8 @@ function makeVoteButton(reply) {
     render()
 
     try {
-      await backend.toggleReplyVote(reply.id)
+      await onToggle()
+      remember(liked, count)
     } catch (error) {
       liked = previousLiked
       count = previousCount
@@ -396,6 +430,25 @@ function makeVoteButton(reply) {
   })
 
   return button
+}
+
+function makePostVoteButton(post) {
+  return makeVoteButton({
+    likedByMe: post.liked_by_me,
+    upvoteCount: post.upvote_count,
+    question: true,
+    onToggle: () => backend.togglePostVote(post.id),
+    remember: (liked, count) => rememberVote({ postId: post.id }, liked, count),
+  })
+}
+
+function makeReplyVoteButton(reply) {
+  return makeVoteButton({
+    likedByMe: reply.liked_by_me,
+    upvoteCount: reply.upvote_count,
+    onToggle: () => backend.toggleReplyVote(reply.id),
+    remember: (liked, count) => rememberVote({ replyId: reply.id }, liked, count),
+  })
 }
 
 function makeReplyForm(postId) {
@@ -476,6 +529,31 @@ function makeReplyForm(postId) {
   return form
 }
 
+function namedRepliers(replies, limit = 4) {
+  const seen = new Set()
+  const faces = []
+  for (const reply of replies) {
+    if (reply.is_anonymous) continue
+    const name = String(reply.author_name || '').trim()
+    const key = `${name}|${reply.author_avatar_url || ''}`
+    if (!name || seen.has(key)) continue
+    seen.add(key)
+    faces.push(reply)
+    if (faces.length >= limit) break
+  }
+  return faces
+}
+
+function makeInsightPreview(reply) {
+  const preview = element('div', 'insight-preview')
+  const who = reply.is_anonymous ? '匿名成员' : reply.author_name || 'Google 用户'
+  preview.append(
+    element('span', 'insight-preview-who', who),
+    element('p', 'insight-preview-body', excerptPlain(reply.body)),
+  )
+  return preview
+}
+
 function makePost(post, shouldOpen = false) {
   const article = element('article', 'post-card')
 
@@ -488,7 +566,8 @@ function makePost(post, shouldOpen = false) {
   )
   header.append(meta)
 
-  const title = element('h3', 'post-title', post.title)
+  const heading = element('div', 'post-heading')
+  heading.append(element('h3', 'post-title', post.title), makePostVoteButton(post))
   const body = makeMarkdownBody('post-body', post.body)
 
   // 有草稿却折叠起来，等于把它藏没了
@@ -496,14 +575,26 @@ function makePost(post, shouldOpen = false) {
     replyDrafts.has(String(post.id)) ||
     post.replies.some((reply) => editDrafts.has(String(reply.id)))
 
-  const thread = document.createElement('details')
-  thread.className = 'thread'
-  thread.dataset.postId = String(post.id)
-  thread.open = shouldOpen || hasDraft
-
-  const summary = document.createElement('summary')
-  summary.textContent = post.replies.length ? `${post.replies.length} 条回复` : '还没有回复'
-  thread.append(summary)
+  const open = shouldOpen || hasDraft
+  const toggle = element('button', 'thread-toggle')
+  toggle.type = 'button'
+  toggle.setAttribute('aria-expanded', String(open))
+  toggle.setAttribute('aria-controls', `thread-${post.id}`)
+  const faces = namedRepliers(post.replies)
+  if (faces.length) {
+    const stack = element('span', 'post-faces')
+    faces.forEach((reply) => {
+      stack.append(makeAvatar(reply.author_name, reply.author_avatar_url, false))
+    })
+    toggle.append(stack)
+  }
+  toggle.append(
+    element(
+      'span',
+      'thread-count',
+      post.replies.length ? `${post.replies.length} 条回复` : '还没有回复',
+    ),
+  )
 
   const replies = element('ol', 'reply-list')
   if (post.replies.length) {
@@ -515,15 +606,32 @@ function makePost(post, shouldOpen = false) {
     replies.append(element('li', 'empty-replies', '还没有人回。你的判断可能就是楼主最需要的。'))
   }
 
-  thread.append(replies, makeReplyForm(post.id))
-  article.append(header, title, body, thread)
+  const panel = element('div', 'thread-panel')
+  panel.id = `thread-${post.id}`
+  panel.dataset.postId = String(post.id)
+  panel.hidden = !open
+  panel.append(replies, makeReplyForm(post.id))
+
+  toggle.addEventListener('click', () => {
+    const isOpen = toggle.getAttribute('aria-expanded') === 'true'
+    toggle.setAttribute('aria-expanded', String(!isOpen))
+    panel.hidden = isOpen
+  })
+
+  const topReply = post.replies[0]
+  const insight = topReply && Number(topReply.upvote_count) > 0 ? topReply : null
+  const engage = element('div', 'post-engage')
+  engage.append(toggle)
+  article.append(header, heading, body)
+  if (insight) article.append(makeInsightPreview(insight))
+  article.append(engage, panel)
   return article
 }
 
 function openPostIds() {
   return new Set(
-    [...elements.feed.querySelectorAll('details[open][data-post-id]')].map(
-      (details) => details.dataset.postId,
+    [...elements.feed.querySelectorAll('.thread-panel[data-post-id]:not([hidden])')].map(
+      (panel) => panel.dataset.postId,
     ),
   )
 }
@@ -767,11 +875,57 @@ const renderPostCount = attachCharacterCount(
   LIMITS.postMax,
 )
 
+function composerHasDraft() {
+  return Boolean(elements.postTitle.value.trim() || elements.postBody.value.trim())
+}
+
+function composerDraftLabel() {
+  const title = elements.postTitle.value.trim()
+  if (title) return title
+  return excerptPlain(elements.postBody.value, 24)
+}
+
+function updateComposerToggle() {
+  const draft = composerHasDraft()
+  elements.composerToggleLabel.textContent = draft ? composerDraftLabel() : '最近遇到什么事了？'
+  elements.composerHint.textContent = draft ? '继续编辑' : '匿名发布'
+  elements.composerToggle.classList.toggle('has-draft', draft)
+  elements.composerToggle.setAttribute(
+    'aria-label',
+    draft ? `继续编辑：${composerDraftLabel()}` : '写一个匿名问题',
+  )
+}
+
+function setComposerOpen(open, { focus = true } = {}) {
+  elements.postForm.classList.toggle('is-open', open)
+  elements.composerToggle.hidden = open
+  elements.composerToggle.setAttribute('aria-expanded', String(open))
+  elements.composerFields.hidden = !open
+  if (open) {
+    if (focus) elements.postTitle.focus()
+    return
+  }
+  updateComposerToggle()
+  if (focus) elements.composerToggle.focus()
+}
+
+elements.composerToggle.addEventListener('click', () => setComposerOpen(true))
+elements.postTitle.addEventListener('input', updateComposerToggle)
+elements.postBody.addEventListener('input', updateComposerToggle)
+
+elements.postForm.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') return
+  if (elements.composerFields.hidden) return
+  event.preventDefault()
+  setComposerOpen(false)
+})
+
 elements.postForm.addEventListener('submit', async (event) => {
   event.preventDefault()
   const result = validatePost(elements.postTitle.value, elements.postBody.value)
   if (!result.ok) {
     showToast(result.message, 'error')
+    if (elements.composerFields.hidden) setComposerOpen(true)
     return
   }
 
@@ -781,6 +935,7 @@ elements.postForm.addEventListener('submit', async (event) => {
     await backend.createPost(result.value)
     elements.postForm.reset()
     renderPostCount()
+    setComposerOpen(false, { focus: false })
     await loadPosts()
     showToast('已匿名发布。')
   } catch (error) {
@@ -789,6 +944,8 @@ elements.postForm.addEventListener('submit', async (event) => {
     setButtonBusy(button, false)
   }
 })
+
+updateComposerToggle()
 
 async function start() {
   applyLimits()

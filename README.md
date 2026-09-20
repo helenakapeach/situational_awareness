@@ -6,7 +6,7 @@ The smallest launchable product is intentionally only this:
 2. Redeem an invite code once, the first time.
 3. Publish an anonymous text post.
 4. Reply with the Google account's display name, or anonymously if the box is checked. You can edit or delete your own replies afterwards.
-5. Upvote a reply; replies in a thread sort by vote count.
+5. Upvote a post as a good question, and upvote a reply; replies in a thread sort by vote count.
 
 There are no DMs, profiles, categories, notifications, images, realtime updates, or admin UI. Admin moderation, including creating invite codes, happens directly in the Supabase dashboard. Logged-in members can send a short feedback note from the top bar, filter the loaded posts with the top-bar search box, and switch between light and dark.
 
@@ -21,7 +21,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173/?demo=1`. Demo data stays in that browser's `localStorage` and never reaches Supabase. The demo invite code is `DEMO2026`. Replies can be upvoted; the thread reorders by vote count, then by time. The seeded reply from the demo user can be edited or deleted.
+Open `http://localhost:5173/?demo=1`. Demo data stays in that browser's `localStorage` and never reaches Supabase. The demo invite code is `DEMO2026`. Posts can be marked 好问题; replies can be upvoted, and the thread reorders by vote count, then by time. The seeded reply from the demo user can be edited or deleted.
 
 ## Connect Supabase
 

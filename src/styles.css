@@ -2,7 +2,7 @@
   /* Color lives entirely in design-tokens.css now — this file only keeps
      the non-color tokens that system doesn't own. */
   --shadow: 0 20px 55px rgb(22 35 46 / 9%);
-  --sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 
 * {
@@ -30,15 +30,13 @@ textarea {
   font: inherit;
 }
 
-button,
-summary {
+button {
   -webkit-tap-highlight-color: transparent;
 }
 
 button:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
-summary:focus-visible,
 a:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--brand) 24%, transparent);
   outline-offset: 2px;
@@ -255,17 +253,17 @@ button:disabled {
   top: 0;
   z-index: 10;
   display: flex;
-  min-height: 68px;
+  min-height: 56px;
   flex-wrap: wrap;
   align-items: center;
   gap: clamp(10px, 2vw, 28px);
-  padding: 10px clamp(18px, 4vw, 48px);
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  padding: 8px clamp(18px, 4vw, 48px);
+  color: var(--text);
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
   border-bottom: 1px solid var(--border);
   backdrop-filter: blur(12px);
 }
 
-.demo-banner:not([hidden]) + #loading-view + #signed-out-view + .app-shell .topbar,
 .demo-banner:not([hidden]) ~ .app-shell .topbar {
   top: 32px;
 }
@@ -281,12 +279,6 @@ button:disabled {
   font-size: 20px;
   letter-spacing: 0.06em;
   line-height: 1.2;
-}
-
-/* 顶栏横向空间比登录页紧张，英文名叠在主名下面而不是并排 */
-.compact-brand .brand-latin {
-  display: block;
-  margin-top: 1px;
 }
 
 .account-menu {
@@ -452,21 +444,85 @@ button:disabled {
 }
 
 .composer-card {
+  width: 100%;
+  padding: 4px;
+}
+
+.composer-card:not(.is-open):hover,
+.composer-card:not(.is-open):focus-within {
+  border-color: var(--brand);
+}
+
+.composer-card.is-open {
   padding: 16px 18px 14px;
-  border-left: 3px solid var(--insight);
 }
 
-.composer-card > h2,
-.feed-heading-row h2 {
-  margin: 0 0 8px;
-  font-family: var(--sans);
+.composer-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 14px;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  font-family: inherit;
   font-size: 18px;
+  font-weight: 650;
   line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+}
+
+.composer-toggle:hover {
+  background: var(--surface-sunken);
+}
+
+.composer-toggle:not(.has-draft) #composer-toggle-label {
+  color: var(--text-soft);
+}
+
+.composer-toggle.has-draft {
+  background: var(--surface-sunken);
+}
+
+.composer-toggle.has-draft .composer-hint {
+  color: var(--brand);
+}
+
+#composer-toggle-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-hint {
+  flex: none;
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.composer-heading {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 1.35;
+  cursor: default;
 }
 
 .feed-heading-row h2 {
-  margin-bottom: 0;
+  margin: 0;
+  font-family: var(--sans);
   font-size: 21px;
+  line-height: 1.35;
 }
 
 .composer-card label {
@@ -744,8 +800,17 @@ textarea::placeholder {
   color: var(--text-faint);
 }
 
-.post-title {
+.post-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
   margin: 18px 0 8px;
+}
+
+.post-title {
+  min-width: 0;
+  flex: 1;
+  margin: 0;
   font-family: var(--sans);
   font-size: 19px;
   line-height: 1.45;
@@ -761,6 +826,47 @@ textarea::placeholder {
   color: var(--text-soft);
   font-size: 15px;
   line-height: 1.78;
+}
+
+.insight-preview {
+  margin: 16px 0 0;
+  padding: 10px 12px 10px 14px;
+  background: var(--insight-tint);
+  border-left: 3px solid var(--insight);
+  border-radius: 0 8px 8px 0;
+}
+
+.insight-preview-who {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--insight-text);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.insight-preview-body {
+  margin: 0;
+  color: var(--insight-text);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.post-faces {
+  display: flex;
+  flex: none;
+  padding-right: 2px;
+}
+
+.post-faces .avatar {
+  width: 24px;
+  height: 24px;
+  font-size: 9px;
+  line-height: 1;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+.post-faces .avatar + .avatar {
+  margin-left: -7px;
 }
 
 .markdown-body > :first-child {
@@ -825,31 +931,39 @@ textarea::placeholder {
   border-left: 3px solid var(--insight);
 }
 
-.thread {
+.post-engage {
   margin-top: 20px;
+  padding-top: 13px;
   border-top: 1px solid var(--border-soft);
 }
 
-.thread summary {
-  width: fit-content;
-  padding: 13px 0 0;
+.thread-toggle {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0;
   color: var(--brand);
-  cursor: pointer;
+  background: transparent;
+  border: 0;
+  font-family: inherit;
   font-size: 13px;
   font-weight: 800;
-  list-style: none;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
-.thread summary::-webkit-details-marker {
+.thread-toggle::after {
+  content: "+";
+}
+
+.thread-toggle[aria-expanded='true']::after {
+  content: "−";
+}
+
+.post-card:has(.thread-toggle[aria-expanded='true']) .insight-preview {
   display: none;
-}
-
-.thread summary::after {
-  content: "  +";
-}
-
-.thread[open] summary::after {
-  content: "  −";
 }
 
 .reply-list {
@@ -937,6 +1051,7 @@ textarea::placeholder {
 
 .vote-button {
   display: inline-flex;
+  flex: none;
   align-items: center;
   gap: 6px;
   min-height: 32px;
@@ -969,6 +1084,22 @@ textarea::placeholder {
 
 .vote-button[aria-pressed="true"] svg {
   fill: currentcolor;
+}
+
+.vote-button.is-question {
+  min-height: calc(19px * 1.45);
+  padding: 0 6px 0 4px;
+  border-color: transparent;
+}
+
+.vote-button.is-question:hover,
+.vote-button.is-question[aria-pressed="true"] {
+  border-color: var(--brand);
+}
+
+.vote-button.is-question svg {
+  width: 15px;
+  height: 15px;
 }
 
 .vote-count {
@@ -1081,7 +1212,6 @@ textarea::placeholder {
   .intro-panel {
     margin-bottom: 20px;
   }
-
 }
 
 /* 顶栏一行放不下时按固定顺序退让：先让 tab 掉到第二行，再让搜索也独占一行。
@@ -1109,11 +1239,6 @@ textarea::placeholder {
 }
 
 @media (max-width: 520px) {
-  /* 顶栏很挤，这个宽度下只留主名；登录页版面宽，英文副名照常显示 */
-  .compact-brand .brand-latin {
-    display: none;
-  }
-
   .tab {
     padding: 7px 11px;
     font-size: 15px;
