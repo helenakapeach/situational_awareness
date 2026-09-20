@@ -78,16 +78,8 @@ The migrations use both grants and RLS. Unauthenticated users have no table or s
 
 ## Publish with GitHub Pages
 
-The committed workflow tests, builds, and publishes `dist` whenever `main` changes.
+Hand this to whoever is shipping: **[DEPLOY.md](./DEPLOY.md)** (Chinese). Ordered checklist: create the Supabase project, `db push`, Google OAuth, Pages variables, invite code, and later releases.
 
-1. In the repository, open **Settings → Pages** and select **GitHub Actions** as the source.
-2. Open **Settings → Secrets and variables → Actions → Variables** and add:
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_PUBLISHABLE_KEY`
-3. Merge the implementation branch into `main`, or run the workflow manually.
+Pages builds from `main` via `.github/workflows/deploy-pages.yml`. It does **not** run SQL. If `supabase/migrations/` gained a file, run `npx supabase@2.117.0 db push` **before** (or immediately as) you push `main`. Reverse that and the feed can fail until the database catches up.
 
-The expected production URL is `https://helenakapeach.github.io/situational_awareness/`. If the two repository variables are missing, the deployed site intentionally opens in browser-only demo mode instead of contacting a backend.
-
-## Production redirect checklist
-
-For GitHub Pages, add `https://helenakapeach.github.io` as an authorized JavaScript origin in Google Auth Platform and add `https://helenakapeach.github.io/situational_awareness/` to Supabase's redirect allow list. The Google callback URI remains the Supabase `/auth/v1/callback` URL.
+Production URL: https://helenakapeach.github.io/situational_awareness/. If `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` are missing from the repo's Actions **Variables**, the live site stays in browser-only demo mode.
