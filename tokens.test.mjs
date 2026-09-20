@@ -110,6 +110,22 @@ for (const [modeName, tokens] of Object.entries(modes)) {
   if (light !== dark) failures.push({ modeName: "两套主题", fg: "令牌集合", bg: "不一致", ratio: 0, threshold: 0 });
 }
 
+/* ---------- 样式表引用的令牌必须真实存在 ----------
+   CSS 引用一个未定义的变量不会报错，只会静默继承父级值。
+   `.invite-error` 曾经写成 var(--danger)（色板里只有 --risk），
+   于是邀请码报错一直是普通灰字，没人发现。 */
+
+const styles = await readFile(new URL("./src/styles.css", import.meta.url), "utf8");
+// styles.css 自己的 :root 里还有 --shadow / --sans 这类非颜色令牌
+const defined = new Set([
+  ...Object.keys(modes["浅色"]),
+  ...[...styles.matchAll(/^\s*--([\w-]+)\s*:/gm)].map(([, name]) => name),
+]);
+const referenced = new Set([...styles.matchAll(/var\(\s*--([\w-]+)/g)].map(([, name]) => name));
+const missing = [...referenced].filter((name) => !defined.has(name));
+
+console.log(`\n样式表引用了 ${referenced.size} 个令牌，其中未定义 ${missing.length} 个。`);
+
 console.log(`\n共校验 ${checked} 组组合。`);
 
 if (failures.length > 0) {
@@ -117,7 +133,12 @@ if (failures.length > 0) {
   for (const f of failures) {
     console.error(`  ${f.modeName}  --${f.fg} on --${f.bg}: ${f.ratio.toFixed(2)} < ${f.threshold}`);
   }
-  process.exit(1);
 }
 
-console.log("全部达到 WCAG AA，且两套主题令牌集合一致。");
+if (missing.length > 0) {
+  console.error(`\n样式表引用了未定义的令牌：${missing.map((n) => `--${n}`).join("、")}`);
+}
+
+if (failures.length > 0 || missing.length > 0) process.exit(1);
+
+console.log("全部达到 WCAG AA，两套主题令牌集合一致，且样式表没有引用未定义的令牌。");

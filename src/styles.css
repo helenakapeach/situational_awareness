@@ -135,33 +135,33 @@ a:focus-visible {
   gap: 13px;
 }
 
-.brand-name {
-  font-family: var(--sans);
+.brand-line {
+  color: var(--text);
   font-size: 17px;
   font-weight: 700;
+  line-height: 1.35;
 }
 
-.brand-subtitle {
-  margin-top: 2px;
+.brand-name {
+  margin-top: 3px;
   color: var(--text-faint);
   font-size: 12px;
+  font-weight: 600;
 }
 
 .eyebrow {
   margin: 0 0 8px;
-  color: var(--insight-text);
+  color: var(--text-faint);
   font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  font-weight: 700;
 }
 
-.login-card > .eyebrow {
+.login-card > .eyebrow,
+.login-brand + h1 {
   margin-top: 64px;
 }
 
-.login-card h1,
-.intro-panel h1 {
+.login-card h1 {
   margin: 0;
   font-family: var(--sans);
   font-size: clamp(32px, 6vw, 48px);
@@ -176,6 +176,10 @@ a:focus-visible {
   color: var(--text-soft);
   font-size: 15px;
   line-height: 1.8;
+}
+
+.login-card h1 + .google-button {
+  margin-top: 30px;
 }
 
 .google-button,
@@ -196,14 +200,14 @@ a:focus-visible {
   min-height: 52px;
   padding: 0 18px;
   color: var(--text-on-fill);
-  background: var(--text);
+  background: var(--brand);
   border-radius: 9px;
   font-weight: 700;
   transition: transform 140ms ease, background 140ms ease;
 }
 
 .google-button:hover {
-  background: color-mix(in srgb, var(--text), black 15%);
+  background: var(--brand-hover);
   transform: translateY(-1px);
 }
 
@@ -220,16 +224,9 @@ button:disabled {
   opacity: 0.62;
 }
 
-.privacy-note {
-  margin: 14px 0 0;
-  color: var(--text-faint);
-  font-size: 12px;
-  text-align: center;
-}
-
 .invite-error {
   margin: 10px 0 0;
-  color: var(--danger);
+  color: var(--risk);
   font-size: 13px;
 }
 
@@ -254,8 +251,9 @@ button:disabled {
   z-index: 10;
   display: flex;
   min-height: 68px;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
+  gap: clamp(10px, 2vw, 28px);
   padding: 10px clamp(18px, 4vw, 48px);
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   border-bottom: 1px solid var(--border);
@@ -272,35 +270,127 @@ button:disabled {
   text-decoration: none;
 }
 
-.compact-brand strong,
-.compact-brand small {
-  display: block;
-}
-
 .compact-brand strong {
+  display: block;
   font-family: var(--sans);
   font-size: 14px;
-}
-
-.compact-brand small {
-  margin-top: 1px;
-  color: var(--text-faint);
-  font-size: 12px;
+  line-height: 1.25;
 }
 
 .account-menu {
   display: flex;
   align-items: center;
-  gap: 13px;
+  gap: 10px;
 }
 
 .account-name {
-  max-width: 180px;
-  overflow: hidden;
-  font-size: 13px;
   font-weight: 700;
-  text-overflow: ellipsis;
+}
+
+/* 靠 auto 外边距把搜索和右侧按钮推到行尾，logo 与 tab 留在行首 */
+.topbar-search {
+  display: flex;
+  flex: 1;
+  max-width: 320px;
+  margin-left: auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 13px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.topbar-search:focus-within {
+  border-color: var(--brand);
+}
+
+.topbar-search svg {
+  width: 15px;
+  flex: none;
+  color: var(--text-faint);
+  fill: none;
+  stroke: currentcolor;
+  stroke-linecap: round;
+  stroke-width: 2;
+}
+
+/* 覆盖全局 input：这里的边框和焦点环由外层药丸承担 */
+.topbar-search input {
+  padding: 0;
+  background: transparent;
+  border: 0;
+  font-size: 13px;
+}
+
+.topbar-search input:focus {
+  box-shadow: none;
+}
+
+/* 不参与收缩：顶栏挤了先压搜索框，别把 tab 文字切掉 */
+.tabbar {
+  flex: none;
+}
+
+.tabbar-inner {
+  display: flex;
+  gap: 2px;
+}
+
+.tab {
+  flex: none;
+  padding: 7px 12px;
+  color: var(--text-faint);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 700;
   white-space: nowrap;
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--text);
+  background: var(--surface-sunken);
+}
+
+.tab[aria-current='page'] {
+  color: var(--brand);
+  background: var(--brand-tint);
+}
+
+.icon-button[aria-current='page'] {
+  color: var(--brand);
+  background: var(--brand-tint);
+  border-color: var(--brand);
+}
+
+.panel-placeholder {
+  padding: 52px 24px;
+  color: var(--text-faint);
+  background: color-mix(in srgb, var(--surface) 45%, transparent);
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  text-align: center;
+}
+
+.panel-placeholder strong {
+  display: block;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.panel-placeholder p {
+  max-width: 34rem;
+  margin: 8px auto 0;
+  font-size: 14px;
+  line-height: 1.75;
+}
+
+.me-actions {
+  margin-top: 24px;
 }
 
 .text-button {
@@ -314,67 +404,30 @@ button:disabled {
   color: var(--text);
 }
 
-.page-grid {
-  display: grid;
-  width: min(100%, 1180px);
-  grid-template-columns: minmax(250px, 0.75fr) minmax(0, 1.5fr);
-  gap: clamp(30px, 6vw, 88px);
+.page-shell {
+  width: min(100%, 800px);
   margin: 0 auto;
-  padding: clamp(40px, 6vw, 78px) clamp(18px, 4vw, 48px) 100px;
+  padding: clamp(28px, 5vw, 52px) clamp(18px, 4vw, 48px) 100px;
 }
 
 .intro-panel {
-  position: sticky;
-  top: 130px;
-  align-self: start;
+  margin-bottom: 36px;
 }
 
-.intro-panel h1 {
-  font-size: clamp(31px, 4vw, 44px);
+.module-tagline {
+  margin: 0;
+  color: var(--text);
+  font-size: clamp(18px, 2.5vw, 22px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.4;
 }
 
-.intro-panel > p:not(.eyebrow) {
-  margin: 22px 0 28px;
+.trust-line {
+  margin: 10px 0 0;
   color: var(--text-soft);
   font-size: 15px;
   line-height: 1.8;
-}
-
-.rule-card {
-  padding: 2px 18px;
-  background: color-mix(in srgb, var(--surface) 62%, transparent);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-}
-
-.rule-card > div {
-  display: grid;
-  grid-template-columns: 28px 1fr;
-  gap: 8px;
-  padding: 18px 0;
-  border-top: 1px solid var(--border-soft);
-}
-
-.rule-card > div:first-child {
-  border-top: 0;
-}
-
-.rule-number {
-  color: var(--insight-text);
-  font-family: var(--sans);
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.rule-card p {
-  margin: 0;
-  color: var(--text-soft);
-  font-size: 13px;
-  line-height: 1.65;
-}
-
-.rule-card strong {
-  color: var(--text);
 }
 
 .discussion-column {
@@ -572,6 +625,43 @@ textarea::placeholder {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+.theme-toggle {
+  flex: none;
+}
+
+.login-brand .theme-toggle {
+  margin-left: auto;
+}
+
+/* 图标显示的是「点下去会切到哪个模式」，所以下面三段判断必须和
+   design-tokens.css 里解析主题的方式逐字对应：显式 [data-theme] 优先，
+   没有它才跟随系统。写歪了图标就会和实际配色相反。 */
+.theme-icon-moon {
+  display: block;
+}
+
+.theme-icon-sun {
+  display: none;
+}
+
+:root[data-theme="dark"] .theme-icon-moon {
+  display: none;
+}
+
+:root[data-theme="dark"] .theme-icon-sun {
+  display: block;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .theme-icon-moon {
+    display: none;
+  }
+
+  :root:not([data-theme="light"]) .theme-icon-sun {
+    display: block;
   }
 }
 
@@ -939,62 +1029,61 @@ textarea::placeholder {
 }
 
 @media (max-width: 800px) {
-  .page-grid {
-    grid-template-columns: 1fr;
-    gap: 34px;
-    padding-top: 34px;
+  .page-shell {
+    padding-top: 28px;
   }
 
   .intro-panel {
-    position: static;
+    margin-bottom: 28px;
   }
 
-  .intro-panel h1 {
-    font-size: 34px;
+}
+
+/* 顶栏一行放不下时按固定顺序退让：先让 tab 掉到第二行，再让搜索也独占一行。
+   搜索始终保留——藏了移动端就没法搜。 */
+@media (max-width: 1000px) {
+  .tabbar {
+    order: 1;
+    flex-basis: 100%;
   }
 
-  .intro-panel > p:not(.eyebrow) {
-    margin-bottom: 20px;
+  .tabbar-inner {
+    overflow-x: auto;
   }
 
-  .rule-card {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 18px;
-    padding: 16px 18px;
+  .topbar-search {
+    margin-left: 0;
   }
 
-  .rule-card > div {
-    display: block;
-    padding: 0;
-    border: 0;
+  .account-menu {
+    margin-left: auto;
   }
+}
 
-  .rule-number {
-    display: block;
-    margin-bottom: 5px;
+@media (max-width: 660px) {
+  .topbar-search {
+    order: 2;
+    max-width: none;
+    flex-basis: 100%;
   }
 }
 
 @media (max-width: 520px) {
-  .topbar {
-    min-height: 62px;
-  }
-
   .compact-brand strong {
-    font-size: 12px;
+    display: none;
   }
 
-  .compact-brand small,
-  .account-name {
-    display: none;
+  .tab {
+    padding: 7px 10px;
+    font-size: 13px;
   }
 
   .login-card {
     padding: 28px 23px 32px;
   }
 
-  .login-card > .eyebrow {
+  .login-card > .eyebrow,
+  .login-brand + h1 {
     margin-top: 48px;
   }
 

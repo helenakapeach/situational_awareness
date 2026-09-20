@@ -154,25 +154,36 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  --bg:              #121716;
-  --surface:         #191F1E;
-  --surface-sunken:  #0D1211;
+  /* 中性色阶的色相锚在 30–45°，与浅色的 42–43° 同族。
+     之前这一档是 167–170° 的绿黑，虽然避开了蓝黑，但仍然是冷的，
+     两个模式差了约 125° 色相——正是上面警告过的「像两个产品」。 */
+  --bg:              #171613;
+  --surface:         #1F1D1A;
+  --surface-sunken:  #121110;
 
-  --border:          #2B3432;
-  --border-soft:     #222A28;
+  --border:          #35322D;
+  --border-soft:     #2A2723;
 
-  --text:            #E9EAE3;
-  --text-soft:       #A8B2AE;
-  --text-faint:      #8A9491;
-  --text-on-fill:    #0C1110;
+  --text:            #EBE8E1;
+  --text-soft:       #B1ABA1;
+  --text-faint:      #948D83;
+  /* 必须与 --chrome 保持不同值。两者曾同为 #0C1110，
+     使「深色导航区里误用 text-on-fill」这个坑不可见。 */
+  --text-on-fill:    #16130F;
 
   /* 深青蓝在深色底上不可读，提亮到同色相的浅青 */
   --brand:           #5E9CA8;
   --brand-hover:     #86BAC4;
-  --brand-tint:      #17302F;
+  /* 用通道极差（9）而不是 HSV 饱和度对齐浅色的 #E3EBEC：
+     低明度下饱和度会被放大，极差才是「安静程度」的可比量。
+     原值 #17302F 极差 25，选中态在深色下比浅色吵得多。 */
+  --brand-tint:      #202829;
 
+  /* 浅色下文字令牌比形状令牌【更深】，深色下【更亮】——
+     方向相反，但职责不变：--insight 管形状，--insight-text 管文字。
+     两者曾在深色下同为一个值，误用只会在切回浅色时才暴露。 */
   --insight:         #C48A3A;
-  --insight-text:    #C48A3A;
+  --insight-text:    #E1A85C;
   --insight-tint:    #2E2417;
 
   --verified:        #4D9C82;
@@ -181,8 +192,9 @@
   --risk:            #D56F77;
   --risk-tint:       #331D1E;
 
-  --chrome:          #0C1110;
-  --chrome-hover:    #18201F;
+  /* 保持青蓝色相（190°），否则顶栏会退化成一条没有品牌感的黑条 */
+  --chrome:          #13282C;
+  --chrome-hover:    #1B373C;
   --chrome-text:     #C7D3D3;
   --chrome-text-dim: #93A5A6;
 }
@@ -191,24 +203,24 @@
   :root:not([data-theme="light"]) {
     color-scheme: dark;
 
-    --bg:              #121716;
-    --surface:         #191F1E;
-    --surface-sunken:  #0D1211;
+    --bg:              #171613;
+    --surface:         #1F1D1A;
+    --surface-sunken:  #121110;
 
-    --border:          #2B3432;
-    --border-soft:     #222A28;
+    --border:          #35322D;
+    --border-soft:     #2A2723;
 
-    --text:            #E9EAE3;
-    --text-soft:       #A8B2AE;
-    --text-faint:      #8A9491;
-    --text-on-fill:    #0C1110;
+    --text:            #EBE8E1;
+    --text-soft:       #B1ABA1;
+    --text-faint:      #948D83;
+    --text-on-fill:    #16130F;
 
     --brand:           #5E9CA8;
     --brand-hover:     #86BAC4;
-    --brand-tint:      #17302F;
+    --brand-tint:      #202829;
 
     --insight:         #C48A3A;
-    --insight-text:    #C48A3A;
+    --insight-text:    #E1A85C;
     --insight-tint:    #2E2417;
 
     --verified:        #4D9C82;
@@ -217,8 +229,8 @@
     --risk:            #D56F77;
     --risk-tint:       #331D1E;
 
-    --chrome:          #0C1110;
-    --chrome-hover:    #18201F;
+    --chrome:          #13282C;
+    --chrome-hover:    #1B373C;
     --chrome-text:     #C7D3D3;
     --chrome-text-dim: #93A5A6;
   }

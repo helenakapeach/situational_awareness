@@ -34,23 +34,58 @@ const elements = {
   login: document.querySelector('#signed-out-view'),
   loginButton: document.querySelector('#login-button'),
   logoutButton: document.querySelector('#logout-button'),
+  panelLinks: document.querySelectorAll('.panel-link'),
+  panels: document.querySelectorAll('.panel'),
   postBody: document.querySelector('#post-body'),
   postCharacterCount: document.querySelector('#post-character-count'),
   postForm: document.querySelector('#post-form'),
   postTitle: document.querySelector('#post-title'),
   refreshButton: document.querySelector('#refresh-button'),
+  searchInput: document.querySelector('#search-input'),
+  themeToggles: document.querySelectorAll('.theme-toggle'),
   toast: document.querySelector('#toast'),
 }
+
+const THEME_KEY = 'situational-awareness-theme'
 
 let session = null
 let loadingPosts = false
 let toastTimer = null
+// 搜索只筛已经取回的这批帖子，不再打一次后端
+let cachedPosts = []
+let searchQuery = ''
+
+function showPanel(name) {
+  elements.panels.forEach((panel) => {
+    panel.hidden = panel.id !== `panel-${name}`
+  })
+  elements.panelLinks.forEach((link) => {
+    if (link.dataset.panel === name) link.setAttribute('aria-current', 'page')
+    else link.removeAttribute('aria-current')
+  })
+}
 
 function setView(view) {
   elements.loading.hidden = view !== 'loading'
   elements.login.hidden = view !== 'login'
   elements.inviteView.hidden = view !== 'invite'
   elements.app.hidden = view !== 'app'
+}
+
+function activeTheme() {
+  const forced = document.documentElement.dataset.theme
+  if (forced === 'light' || forced === 'dark') return forced
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+}
+
+function toggleTheme() {
+  const next = activeTheme() === 'dark' ? 'light' : 'dark'
+  document.documentElement.dataset.theme = next
+  try {
+    window.localStorage.setItem(THEME_KEY, next)
+  } catch {
+    // 无痕模式下写不进去，本次会话内的切换仍然生效
+  }
 }
 
 function setButtonBusy(button, busy, busyText) {
@@ -287,7 +322,7 @@ function makePost(post, shouldOpen = false) {
   if (post.replies.length) {
     post.replies.forEach((reply) => replies.append(makeReply(reply)))
   } else {
-    replies.append(element('li', 'empty-replies', '成为第一个给出视角的人。'))
+    replies.append(element('li', 'empty-replies', '还没有人回。你的判断可能就是楼主最需要的。'))
   }
 
   thread.append(replies, makeReplyForm(post.id))
@@ -303,6 +338,39 @@ function openPostIds() {
   )
 }
 
+function renderFeed(previouslyOpen = new Set()) {
+  const query = searchQuery.trim().toLowerCase()
+  const visible = query
+    ? cachedPosts.filter(
+        (post) =>
+          post.title.toLowerCase().includes(query) || post.body.toLowerCase().includes(query),
+      )
+    : cachedPosts
+
+  elements.feed.replaceChildren()
+
+  if (visible.length) {
+    visible.forEach((post) =>
+      elements.feed.append(makePost(post, previouslyOpen.has(String(post.id)))),
+    )
+    return
+  }
+
+  const empty = element('div', 'empty-feed')
+  if (query) {
+    empty.append(
+      element('strong', '', '没有匹配的讨论。'),
+      element('p', '', '换个说法，或者清空搜索框看全部。'),
+    )
+  } else {
+    empty.append(
+      element('strong', '', '这里还很安静。'),
+      element('p', '', '发出第一个问题，给社区一个开场。'),
+    )
+  }
+  elements.feed.append(empty)
+}
+
 async function loadPosts({ preserveOpenPost } = {}) {
   if (loadingPosts) return
   loadingPosts = true
@@ -316,20 +384,8 @@ async function loadPosts({ preserveOpenPost } = {}) {
   elements.refreshButton.disabled = true
 
   try {
-    const posts = await backend.listPosts()
-    elements.feed.replaceChildren()
-
-    if (!posts.length) {
-      const empty = element('div', 'empty-feed')
-      empty.append(
-        element('strong', '', '这里还很安静。'),
-        element('p', '', '发出第一个问题，给社区一个开场。'),
-      )
-      elements.feed.append(empty)
-    } else {
-      posts.forEach((post) => elements.feed.append(makePost(post, previouslyOpen.has(String(post.id)))))
-    }
-
+    cachedPosts = await backend.listPosts()
+    renderFeed(previouslyOpen)
     elements.feedStatus.hidden = true
   } catch (error) {
     elements.feedStatus.hidden = false
@@ -348,6 +404,10 @@ async function renderSession(nextSession) {
     elements.accountName.textContent = ''
     elements.feed.replaceChildren()
     elements.feedbackDialog.close()
+    cachedPosts = []
+    searchQuery = ''
+    elements.searchInput.value = ''
+    showPanel('feed')
     setView('login')
     return
   }
@@ -428,6 +488,19 @@ elements.inviteForm.addEventListener('submit', async (event) => {
 })
 
 elements.refreshButton.addEventListener('click', () => loadPosts())
+
+elements.themeToggles.forEach((button) => button.addEventListener('click', toggleTheme))
+
+elements.panelLinks.forEach((link) => {
+  link.addEventListener('click', () => showPanel(link.dataset.panel))
+})
+
+elements.searchInput.addEventListener('input', () => {
+  searchQuery = elements.searchInput.value
+  // 只有讨论广场里有可搜的东西，所以搜索时把人带回那一栏
+  showPanel('feed')
+  renderFeed(openPostIds())
+})
 
 elements.feedbackButton.addEventListener('click', () => {
   elements.feedbackDialog.showModal()
