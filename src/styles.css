@@ -287,12 +287,10 @@ button:disabled {
   font-weight: 700;
 }
 
-/* 靠 auto 外边距把搜索和右侧按钮推到行尾，logo 与 tab 留在行首 */
 .topbar-search {
   display: flex;
   flex: 1;
   max-width: 320px;
-  margin-left: auto;
   align-items: center;
   gap: 8px;
   min-height: 36px;
@@ -328,20 +326,23 @@ button:disabled {
   box-shadow: none;
 }
 
-/* flex: none 让顶栏挤的时候先压搜索框，而不是切掉 tab 文字 */
+/* 两侧 auto 外边距把 tab 推到 logo 与搜索框之间的中间，
+   同时负责把搜索和右上角按钮顶到行尾。
+   flex: none 让顶栏挤的时候先压搜索框，而不是切掉 tab 文字。 */
 .tabbar {
   display: flex;
   flex: none;
-  gap: 2px;
+  gap: 4px;
+  margin: 0 auto;
 }
 
 .tab {
-  padding: 7px 12px;
+  padding: 8px 14px;
   color: var(--text-faint);
   background: transparent;
   border: 0;
-  border-radius: 8px;
-  font-size: 14px;
+  border-radius: 9px;
+  font-size: 16px;
   font-weight: 700;
   white-space: nowrap;
   cursor: pointer;
@@ -1044,10 +1045,6 @@ textarea::placeholder {
     overflow-x: auto;
   }
 
-  .topbar-search {
-    margin-left: 0;
-  }
-
   .account-menu {
     margin-left: auto;
   }
@@ -1067,8 +1064,8 @@ textarea::placeholder {
   }
 
   .tab {
-    padding: 7px 10px;
-    font-size: 13px;
+    padding: 7px 11px;
+    font-size: 15px;
   }
 
   .login-card {
