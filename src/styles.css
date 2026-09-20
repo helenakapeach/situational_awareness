@@ -328,18 +328,14 @@ button:disabled {
   box-shadow: none;
 }
 
-/* 不参与收缩：顶栏挤了先压搜索框，别把 tab 文字切掉 */
+/* flex: none 让顶栏挤的时候先压搜索框，而不是切掉 tab 文字 */
 .tabbar {
-  flex: none;
-}
-
-.tabbar-inner {
   display: flex;
+  flex: none;
   gap: 2px;
 }
 
 .tab {
-  flex: none;
   padding: 7px 12px;
   color: var(--text-faint);
   background: transparent;
@@ -356,14 +352,14 @@ button:disabled {
   background: var(--surface-sunken);
 }
 
-.tab[aria-current='page'] {
+/* 当前所在模块：tab 和右上角的私信 / 我共用一套选中态 */
+.tab[aria-current='page'],
+.icon-button[aria-current='page'] {
   color: var(--brand);
   background: var(--brand-tint);
 }
 
 .icon-button[aria-current='page'] {
-  color: var(--brand);
-  background: var(--brand-tint);
   border-color: var(--brand);
 }
 
@@ -1045,9 +1041,6 @@ textarea::placeholder {
   .tabbar {
     order: 1;
     flex-basis: 100%;
-  }
-
-  .tabbar-inner {
     overflow-x: auto;
   }
 

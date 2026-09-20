@@ -8,7 +8,9 @@ The smallest launchable product is intentionally only this:
 4. Reply with the Google account's display name, or anonymously if the box is checked.
 5. Upvote a reply; replies in a thread sort by vote count.
 
-There are no DMs, profiles, search, categories, notifications, images, realtime updates, or admin UI. Admin moderation, including creating invite codes, happens directly in the Supabase dashboard. Logged-in members can send a short feedback note from the top bar.
+There are no DMs, profiles, categories, notifications, images, realtime updates, or admin UI. Admin moderation, including creating invite codes, happens directly in the Supabase dashboard. Logged-in members can send a short feedback note from the top bar, filter the loaded posts with the top-bar search box, and switch between light and dark.
+
+The top bar also shows tabs for 案例库, 圈子, and 饭局 plus 私信 and 我 icons. Those are deliberately empty placeholders that render a "not built yet" card — no tables, no queries, no routing behind them. Only 讨论广场 is real.
 
 ## Local UI demo
 
