@@ -22,6 +22,8 @@ function initialDemoData() {
   return {
     nextPostId: 3,
     nextReplyId: 5,
+    nextFeedbackId: 1,
+    feedback: [],
     posts: [
       {
         id: 2,
@@ -205,6 +207,11 @@ export function createBackend() {
       if (error) throw error
     },
 
+    async createFeedback(feedback) {
+      const { error } = await supabase.from('feedback').insert(feedback)
+      if (error) throw error
+    },
+
     async toggleReplyVote(replyId) {
       const { error } = await supabase.rpc('toggle_reply_vote', { p_reply_id: replyId })
       if (error) throw error
@@ -317,6 +324,18 @@ function createDemoBackend() {
         is_anonymous: isAnonymous,
         body: reply.body,
         upvote_count: 0,
+        created_at: new Date().toISOString(),
+      })
+      writeData(data)
+    },
+
+    async createFeedback(feedback) {
+      const data = readData()
+      data.feedback ??= []
+      data.nextFeedbackId ??= 1
+      data.feedback.push({
+        id: data.nextFeedbackId++,
+        ...feedback,
         created_at: new Date().toISOString(),
       })
       writeData(data)

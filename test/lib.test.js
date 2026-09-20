@@ -8,6 +8,7 @@ import {
   normalizeInviteCode,
   safeAvatarUrl,
   sortReplies,
+  validateFeedback,
   validateInviteCode,
   validatePost,
   validateReply,
@@ -35,6 +36,15 @@ test('reply validation rejects empty and oversized replies', () => {
   })
   assert.equal(validateReply(' ').ok, false)
   assert.equal(validateReply('a'.repeat(2001)).ok, false)
+})
+
+test('feedback validation trims text and rejects empty or oversized notes', () => {
+  assert.deepEqual(validateFeedback('  登录按钮有点慢  '), {
+    ok: true,
+    value: { body: '登录按钮有点慢' },
+  })
+  assert.equal(validateFeedback(' ').ok, false)
+  assert.equal(validateFeedback('a'.repeat(2001)).ok, false)
 })
 
 test('relative time handles recent, hourly, daily and invalid dates', () => {

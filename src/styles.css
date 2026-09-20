@@ -872,6 +872,34 @@ textarea::placeholder {
   line-height: 1.5;
 }
 
+.feedback-dialog {
+  width: min(100% - 32px, 480px);
+  max-height: min(90vh, 640px);
+  margin: auto;
+  padding: 28px 26px 24px;
+  overflow: auto;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+.feedback-dialog::backdrop {
+  background: color-mix(in srgb, var(--text) 28%, transparent);
+}
+
+.feedback-dialog h2 {
+  margin: 0 0 16px;
+  font-family: var(--sans);
+  font-size: 21px;
+  line-height: 1.35;
+}
+
+.feedback-dialog .composer-actions {
+  margin-top: 16px;
+}
+
 .toast {
   position: fixed;
   bottom: 24px;

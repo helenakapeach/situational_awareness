@@ -8,7 +8,7 @@ The smallest launchable product is intentionally only this:
 4. Reply with the Google account's display name, or anonymously if the box is checked.
 5. Upvote a reply; replies in a thread sort by vote count.
 
-There are no DMs, profiles, search, categories, notifications, images, realtime updates, or admin UI. Admin moderation, including creating invite codes, happens directly in the Supabase dashboard.
+There are no DMs, profiles, search, categories, notifications, images, realtime updates, or admin UI. Admin moderation, including creating invite codes, happens directly in the Supabase dashboard. Logged-in members can send a short feedback note from the top bar.
 
 ## Local UI demo
 
@@ -72,7 +72,7 @@ npm test
 npm run build
 ```
 
-The migrations use both grants and RLS. Unauthenticated users have no table or sequence privileges. Authenticated users must have Google's provider in immutable `app_metadata` **and** a row in `members`, created only by redeeming a valid, still-active invite code through the `redeem_invite_code()` function. `invite_codes` itself has no client grants at all, so codes can't be listed or enumerated through the Data API. Post `author_id` is retained for moderation but has no client SELECT grant, so it is absent from both the UI and browser-accessible Data API responses.
+The migrations use both grants and RLS. Unauthenticated users have no table or sequence privileges. Authenticated users must have Google's provider in immutable `app_metadata` **and** a row in `members`, created only by redeeming a valid, still-active invite code through the `redeem_invite_code()` function. `invite_codes` itself has no client grants at all, so codes can't be listed or enumerated through the Data API. Post `author_id` is retained for moderation but has no client SELECT grant, so it is absent from both the UI and browser-accessible Data API responses. Feedback is insert-only; read it in the SQL editor with `select f.created_at, u.email, f.body from public.feedback f join auth.users u on u.id = f.author_id order by f.created_at desc`.
 
 ## Publish with GitHub Pages
 

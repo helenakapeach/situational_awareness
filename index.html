@@ -125,6 +125,9 @@
         </a>
 
         <div class="account-menu">
+          <button id="feedback-button" class="text-button" type="button" aria-haspopup="dialog" aria-controls="feedback-dialog">
+            反馈
+          </button>
           <span id="account-name" class="account-name"></span>
           <button id="logout-button" class="text-button" type="button">退出</button>
         </div>
@@ -206,6 +209,26 @@
     </div>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <dialog id="feedback-dialog" class="feedback-dialog" aria-labelledby="feedback-title">
+      <form id="feedback-form">
+        <h2 id="feedback-title">有什么想告诉我们的？</h2>
+        <label class="sr-only" for="feedback-body">反馈</label>
+        <textarea
+          id="feedback-body"
+          name="body"
+          rows="5"
+          maxlength="2000"
+          placeholder="哪里别扭、卡住了，或你希望这里变成什么样。"
+          required
+        ></textarea>
+        <div class="composer-actions">
+          <button id="feedback-cancel" class="text-button" type="button">取消</button>
+          <button class="primary-button" type="submit">发送</button>
+        </div>
+      </form>
+    </dialog>
+
     <script type="module" src="/src/app.js"></script>
   </body>
 </html>

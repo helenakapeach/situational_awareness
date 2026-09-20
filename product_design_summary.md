@@ -24,6 +24,7 @@
 
 **🚧 进行中**
 - 邀请码准入门槛（分支 `feature/invite-code-gate`，PR 制作中）—— 在此之前任何 Google 账号登录后即可读帖发帖，没有邀请制的准入门槛，这是当前唯一的信任模型缺口
+- 反馈通道（分支 `feature/feedback-channel`）—— 登录后 topbar 提交一段文字，团队在 dashboard 里读
 - 回复点赞与按赞数排序（已实现：一人一赞可取消，帖内按赞数降序、同分按时间升序；合入 `main` 后需 apply 新 migration）
 
 **❌ 未开始**（按建议优先级排序）
