@@ -287,10 +287,14 @@ button:disabled {
   font-weight: 700;
 }
 
+/* 和 .tabbar 的 margin-left: auto 成对：两个 auto 外边距夹住
+   tab + 搜索这一组，把它整体推到 logo 和右上角按钮之间的中间。
+   搜索的 flex-grow 先被 max-width 截住，剩下的空间才归外边距。 */
 .topbar-search {
   display: flex;
   flex: 1;
   max-width: 320px;
+  margin-right: auto;
   align-items: center;
   gap: 8px;
   min-height: 36px;
@@ -326,14 +330,12 @@ button:disabled {
   box-shadow: none;
 }
 
-/* 两侧 auto 外边距把 tab 推到 logo 与搜索框之间的中间，
-   同时负责把搜索和右上角按钮顶到行尾。
-   flex: none 让顶栏挤的时候先压搜索框，而不是切掉 tab 文字。 */
+/* flex: none 让顶栏挤的时候先压搜索框，而不是切掉 tab 文字 */
 .tabbar {
   display: flex;
   flex: none;
   gap: 4px;
-  margin: 0 auto;
+  margin-left: auto;
 }
 
 .tab {
@@ -1044,17 +1046,19 @@ textarea::placeholder {
     flex-basis: 100%;
     overflow-x: auto;
   }
-
-  .account-menu {
-    margin-left: auto;
-  }
 }
 
+/* 搜索独占一行后，第一行只剩 logo 和按钮，
+   得由按钮自己吃掉中间的空隙 */
 @media (max-width: 660px) {
   .topbar-search {
     order: 2;
     max-width: none;
     flex-basis: 100%;
+  }
+
+  .account-menu {
+    margin-left: auto;
   }
 }
 
