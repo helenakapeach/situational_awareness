@@ -5,7 +5,7 @@ The smallest launchable product is intentionally only this:
 1. Sign in with Google.
 2. Redeem an invite code once, the first time.
 3. Publish an anonymous text post.
-4. Reply with the Google account's display name, or anonymously if the box is checked.
+4. Reply with the Google account's display name, or anonymously if the box is checked. You can edit or delete your own replies afterwards.
 5. Upvote a reply; replies in a thread sort by vote count.
 
 There are no DMs, profiles, categories, notifications, images, realtime updates, or admin UI. Admin moderation, including creating invite codes, happens directly in the Supabase dashboard. Logged-in members can send a short feedback note from the top bar, filter the loaded posts with the top-bar search box, and switch between light and dark.
@@ -21,7 +21,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173/?demo=1`. Demo data stays in that browser's `localStorage` and never reaches Supabase. The demo invite code is `DEMO2026`. Replies can be upvoted; the thread reorders by vote count, then by time.
+Open `http://localhost:5173/?demo=1`. Demo data stays in that browser's `localStorage` and never reaches Supabase. The demo invite code is `DEMO2026`. Replies can be upvoted; the thread reorders by vote count, then by time. The seeded reply from the demo user can be edited or deleted.
 
 ## Connect Supabase
 
@@ -74,7 +74,7 @@ npm test
 npm run build
 ```
 
-The migrations use both grants and RLS. Unauthenticated users have no table or sequence privileges. Authenticated users must have Google's provider in immutable `app_metadata` **and** a row in `members`, created only by redeeming a valid, still-active invite code through the `redeem_invite_code()` function. `invite_codes` itself has no client grants at all, so codes can't be listed or enumerated through the Data API. Post `author_id` is retained for moderation but has no client SELECT grant, so it is absent from both the UI and browser-accessible Data API responses. Feedback is insert-only; read it in the SQL editor with `select f.created_at, u.email, f.body from public.feedback f join auth.users u on u.id = f.author_id order by f.created_at desc`.
+The migrations use both grants and RLS. Unauthenticated users have no table or sequence privileges. Authenticated users must have Google's provider in immutable `app_metadata` **and** a row in `members`, created only by redeeming a valid, still-active invite code through the `redeem_invite_code()` function. `invite_codes` itself has no client grants at all, so codes can't be listed or enumerated through the Data API. Post `author_id` is retained for moderation but has no client SELECT grant, so it is absent from both the UI and browser-accessible Data API responses. Reply `author_id` is the same: the client only receives a boolean `is_mine` computed field, so authors can edit or delete their own replies (including anonymous ones) without anyone else seeing who wrote them. Feedback is insert-only; read it in the SQL editor with `select f.created_at, u.email, f.body from public.feedback f join auth.users u on u.id = f.author_id order by f.created_at desc`.
 
 ## Publish with GitHub Pages
 

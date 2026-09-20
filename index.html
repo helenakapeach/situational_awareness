@@ -193,59 +193,48 @@
             <p class="trust-line">帖子不会露出你是谁。</p>
           </header>
 
-          <div class="discussion-column">
-            <form id="post-form" class="composer-card">
-              <div class="composer-heading">
-                <div>
-                  <p class="eyebrow">发起讨论</p>
-                  <h2>现在最让你拿不准的是什么？</h2>
-                </div>
-                <span class="anon-pill">匿名发布</span>
-              </div>
+          <form id="post-form" class="composer-card">
+            <h2>现在最让你拿不准的是什么？</h2>
 
-              <label for="post-title">一句话标题</label>
-              <input
-                id="post-title"
-                name="title"
-                type="text"
-                minlength="3"
-                maxlength="120"
-                autocomplete="off"
-                placeholder="例如：该不该接下这个跨部门项目？"
-                required
-              />
+            <label for="post-title">一句话标题</label>
+            <input
+              id="post-title"
+              name="title"
+              type="text"
+              minlength="3"
+              maxlength="120"
+              autocomplete="off"
+              placeholder="例如：该不该接下这个跨部门项目？"
+              required
+            />
 
-              <label for="post-body">具体发生了什么？</label>
-              <textarea
-                id="post-body"
-                name="body"
-                rows="5"
-                maxlength="4000"
-                placeholder="补充必要的背景、你已经考虑过的选项，以及真正卡住你的地方。"
-                required
-              ></textarea>
+            <label for="post-body">具体发生了什么？</label>
+            <textarea
+              id="post-body"
+              name="body"
+              rows="3"
+              maxlength="4000"
+              placeholder="补充必要的背景、你已经考虑过的选项，以及真正卡住你的地方。"
+              required
+            ></textarea>
 
-              <div class="composer-actions">
-                <span id="post-character-count" class="character-count">0 / 4000</span>
-                <button class="primary-button" type="submit">匿名发布</button>
-              </div>
-            </form>
-
-            <div class="feed-heading-row">
-              <div>
-                <p class="eyebrow">最新讨论</p>
-                <h2 id="feed-heading">社区正在想什么</h2>
-              </div>
-              <button id="refresh-button" class="icon-button" type="button" aria-label="刷新讨论">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6" />
-                </svg>
-              </button>
+            <div class="composer-actions">
+              <span id="post-character-count" class="character-count">0 / 4000</span>
+              <button class="primary-button" type="submit">匿名发布</button>
             </div>
+          </form>
 
-            <div id="feed-status" class="feed-status" role="status">正在加载讨论…</div>
-            <div id="feed" class="feed" aria-live="polite"></div>
+          <div class="feed-heading-row">
+            <h2 id="feed-heading">社区正在想什么</h2>
+            <button id="refresh-button" class="icon-button" type="button" aria-label="刷新讨论">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6" />
+              </svg>
+            </button>
           </div>
+
+          <div id="feed-status" class="feed-status" role="status">正在加载讨论…</div>
+          <div id="feed" class="feed" aria-live="polite"></div>
         </section>
 
         <section id="panel-library" class="panel" aria-label="案例库" hidden>

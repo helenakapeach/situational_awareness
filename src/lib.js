@@ -143,5 +143,7 @@ export function withVoteState(reply, liked) {
     ...reply,
     upvote_count: Math.max(0, Number(reply.upvote_count) || 0),
     liked_by_me: Boolean(liked),
+    is_mine: Boolean(reply?.is_mine),
+    updated_at: reply?.updated_at || null,
   }
 }

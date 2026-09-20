@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { normalizeInviteCode, sortReplies, withVoteState } from './lib.js'
 
-const DEMO_STORAGE_KEY = 'situational-awareness-demo-v2'
+const DEMO_STORAGE_KEY = 'situational-awareness-demo-v3'
 const DEMO_SESSION_KEY = 'situational-awareness-demo-session'
 const DEMO_MEMBER_KEY = 'situational-awareness-demo-member'
 const DEMO_INVITE_CODE = 'DEMO2026'
@@ -21,7 +21,7 @@ function hoursAgo(hours) {
 function initialDemoData() {
   return {
     nextPostId: 3,
-    nextReplyId: 5,
+    nextReplyId: 6,
     nextFeedbackId: 1,
     feedback: [],
     posts: [
@@ -40,8 +40,20 @@ function initialDemoData() {
     ],
     replies: [
       {
+        id: 5,
+        post_id: 2,
+        author_id: 'demo-user',
+        author_name: 'MVP 测试用户',
+        author_avatar_url: '',
+        is_anonymous: false,
+        body: '我先记下自己的判断：接之前把成功条件和资源缺口写成一页，让老板选，而不是口头答应。',
+        created_at: hoursAgo(0.5),
+        upvote_count: 0,
+      },
+      {
         id: 3,
         post_id: 2,
+        author_id: 'seed-c',
         author_name: '林然',
         author_avatar_url: '',
         is_anonymous: false,
@@ -52,6 +64,7 @@ function initialDemoData() {
       {
         id: 4,
         post_id: 1,
+        author_id: 'seed-d',
         author_name: '周宁',
         author_avatar_url: '',
         is_anonymous: false,
@@ -62,6 +75,7 @@ function initialDemoData() {
       {
         id: 2,
         post_id: 1,
+        author_id: 'seed-w',
         author_name: 'Wendy Zhang',
         author_avatar_url: '',
         is_anonymous: false,
@@ -72,6 +86,7 @@ function initialDemoData() {
       {
         id: 1,
         post_id: 1,
+        author_id: 'seed-a',
         author_name: '匿名成员',
         author_avatar_url: '',
         is_anonymous: true,
@@ -179,7 +194,7 @@ export function createBackend() {
 
       const { data: replies, error: repliesError } = await supabase
         .from('replies')
-        .select('id,post_id,author_name,author_avatar_url,is_anonymous,body,created_at,upvote_count,reply_votes(reply_id)')
+        .select('id,post_id,author_name,author_avatar_url,is_anonymous,body,created_at,updated_at,upvote_count,is_mine:reply_is_mine,reply_votes(reply_id)')
         .in('post_id', posts.map((post) => post.id))
 
       if (repliesError) throw repliesError
@@ -205,6 +220,28 @@ export function createBackend() {
     async createReply(postId, reply) {
       const { error } = await supabase.from('replies').insert({ post_id: postId, ...reply })
       if (error) throw error
+    },
+
+    async updateReply(replyId, body) {
+      const { data, error } = await supabase
+        .from('replies')
+        .update({ body })
+        .eq('id', replyId)
+        .select('id')
+
+      if (error) throw error
+      if (!data?.length) throw new Error('这条回复已经不存在，或不是你的。')
+    },
+
+    async deleteReply(replyId) {
+      const { data, error } = await supabase
+        .from('replies')
+        .delete()
+        .eq('id', replyId)
+        .select('id')
+
+      if (error) throw error
+      if (!data?.length) throw new Error('这条回复已经不存在，或不是你的。')
     },
 
     async createFeedback(feedback) {
@@ -300,7 +337,13 @@ function createDemoBackend() {
           replies: sortReplies(
             data.replies
               .filter((reply) => String(reply.post_id) === String(post.id))
-              .map((reply) => withVoteState(reply, likedIds.has(Number(reply.id)))),
+              .map((reply) => {
+                const { author_id, ...rest } = reply
+                return withVoteState(
+                  { ...rest, is_mine: author_id === demoUser.id },
+                  likedIds.has(Number(reply.id)),
+                )
+              }),
           ),
         }))
         .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
@@ -319,12 +362,14 @@ function createDemoBackend() {
       data.replies.push({
         id: data.nextReplyId++,
         post_id: postId,
+        author_id: demoUser.id,
         author_name: isAnonymous ? '匿名成员' : demoUser.user_metadata.full_name,
         author_avatar_url: '',
         is_anonymous: isAnonymous,
         body: reply.body,
         upvote_count: 0,
         created_at: new Date().toISOString(),
+        updated_at: null,
       })
       writeData(data)
     },
@@ -360,6 +405,30 @@ function createDemoBackend() {
         reply.upvote_count = (Number(reply.upvote_count) || 0) + 1
       }
 
+      writeData(data)
+    },
+
+    async updateReply(replyId, body) {
+      const data = readData()
+      const reply = data.replies.find((item) => String(item.id) === String(replyId))
+      if (!reply || reply.author_id !== demoUser.id) {
+        throw new Error('这条回复已经不存在，或不是你的。')
+      }
+      reply.body = body
+      reply.updated_at = new Date().toISOString()
+      writeData(data)
+    },
+
+    async deleteReply(replyId) {
+      const data = readData()
+      const reply = data.replies.find((item) => String(item.id) === String(replyId))
+      if (!reply || reply.author_id !== demoUser.id) {
+        throw new Error('这条回复已经不存在，或不是你的。')
+      }
+      data.replies = data.replies.filter((item) => String(item.id) !== String(replyId))
+      data.reply_votes = (data.reply_votes || []).filter(
+        (vote) => String(vote.reply_id) !== String(replyId),
+      )
       writeData(data)
     },
   }

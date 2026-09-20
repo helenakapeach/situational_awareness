@@ -91,16 +91,20 @@ test('replies sort by upvote count then oldest first', () => {
   assert.equal(replies[0].id, 2)
 })
 
-test('vote state clamps negative counts and coerces liked to a boolean', () => {
-  assert.deepEqual(withVoteState({ id: 1, upvote_count: 2 }, true), {
+test('vote state clamps negative counts and coerces liked / is_mine to booleans', () => {
+  assert.deepEqual(withVoteState({ id: 1, upvote_count: 2, is_mine: true, updated_at: '2026-09-19T12:00:00Z' }, true), {
     id: 1,
     upvote_count: 2,
     liked_by_me: true,
+    is_mine: true,
+    updated_at: '2026-09-19T12:00:00Z',
   })
   assert.deepEqual(withVoteState({ id: 2, upvote_count: -3 }, undefined), {
     id: 2,
     upvote_count: 0,
     liked_by_me: false,
+    is_mine: false,
+    updated_at: null,
   })
 })
 

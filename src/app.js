@@ -174,10 +174,106 @@ function makeReply(reply, { highlighted = false } = {}) {
     element('strong', 'reply-name', anonymous ? '匿名成员' : reply.author_name || 'Google 用户'),
     element('time', 'reply-time', formatRelativeTime(reply.created_at)),
   )
+  if (reply.updated_at) {
+    header.append(element('span', 'reply-edited', '已编辑'))
+  }
+
   const body = makeMarkdownBody('reply-body', reply.body)
-  content.append(header, body, makeVoteButton(reply))
+  const toolbar = makeReplyToolbar(reply, {
+    onEdit: () => enterEdit(),
+  })
+
+  content.append(header, body, toolbar)
   item.append(content)
+
+  function showView() {
+    body.hidden = false
+    toolbar.hidden = false
+    content.querySelector('.reply-form')?.remove()
+  }
+
+  function enterEdit() {
+    if (content.querySelector('.reply-form')) return
+
+    body.hidden = true
+    toolbar.hidden = true
+
+    const form = element('form', 'reply-form')
+    const label = element('label', 'sr-only', '编辑回复')
+    const textarea = document.createElement('textarea')
+    const actions = element('div', 'reply-actions')
+    const cancel = element('button', 'text-button', '取消')
+    const save = element('button', 'secondary-button', '保存')
+
+    label.htmlFor = `edit-reply-${reply.id}`
+    textarea.id = `edit-reply-${reply.id}`
+    textarea.name = 'body'
+    textarea.rows = 4
+    textarea.maxLength = LIMITS.replyMax
+    textarea.value = reply.body
+    textarea.required = true
+    cancel.type = 'button'
+    save.type = 'submit'
+
+    cancel.addEventListener('click', showView)
+    actions.append(cancel, save)
+    form.append(label, textarea, actions)
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault()
+      const result = validateReply(textarea.value, reply.is_anonymous)
+      if (!result.ok) {
+        showToast(result.message, 'error')
+        textarea.focus()
+        return
+      }
+
+      setButtonBusy(save, true, '保存中…')
+      try {
+        await backend.updateReply(reply.id, result.value.body)
+        await loadPosts({ preserveOpenPost: String(reply.post_id) })
+        showToast('回复已更新。')
+      } catch (error) {
+        showToast(friendlyError(error), 'error')
+        setButtonBusy(save, false)
+      }
+    })
+
+    content.append(form)
+    textarea.focus()
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length)
+  }
+
   return item
+}
+
+function makeReplyToolbar(reply, { onEdit }) {
+  const toolbar = element('div', 'reply-toolbar')
+  toolbar.append(makeVoteButton(reply))
+
+  if (!reply.is_mine) return toolbar
+
+  const own = element('div', 'reply-own-actions')
+  const edit = element('button', 'text-button', '编辑')
+  const remove = element('button', 'text-button danger', '删除')
+  edit.type = 'button'
+  remove.type = 'button'
+  edit.addEventListener('click', onEdit)
+  remove.addEventListener('click', async () => {
+    if (!window.confirm('删除这条回复？赞也会一起去掉。')) return
+    setButtonBusy(remove, true, '删除中…')
+    try {
+      await backend.deleteReply(reply.id)
+      await loadPosts({ preserveOpenPost: String(reply.post_id) })
+      showToast('回复已删除。')
+    } catch (error) {
+      showToast(friendlyError(error), 'error')
+      setButtonBusy(remove, false)
+    }
+  })
+  own.append(edit, remove)
+  toolbar.append(own)
+  return toolbar
 }
 
 function replyIdentityText(anonymous) {
@@ -359,7 +455,7 @@ function renderFeed(previouslyOpen = new Set()) {
     return
   }
 
-  const empty = element('div', 'empty-feed')
+  const empty = element('div', 'panel-placeholder')
   if (query) {
     empty.append(
       element('strong', '', '没有匹配的讨论。'),
