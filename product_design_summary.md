@@ -23,7 +23,7 @@
 
 **已上线**（讨论闭环已经齐，不再按功能清单往下堆）
 - Google 登录 + 邀请码准入（兑换大小写归一、并发兑换安全；码的创建/停用仍走 Supabase SQL，无管理后台）
-- 发帖始终匿名：`posts.author_id` 对 Data API 无 SELECT，不是前端隐藏
+- 发帖始终匿名：`posts.author_id` 对 Data API 无 SELECT，不是前端隐藏；作者可通过 `post_is_mine` 编辑或删除自己的帖子，删帖会连带去掉回复和赞
 - 回复默认真名（Google 显示名），可选匿名；匿名回复由库层剥掉身份
 - 回复点赞（一人一赞可取消），帖内按赞数降序、同分按时间升序
 - 帖子点赞（一人一赞可取消），表示「好问题」；广场仍按时间排，不按赞数重排
@@ -97,7 +97,7 @@
 |---|---|
 | `invite_codes` | code（存大写）, created_by, is_active, max_uses（可选）, used_count |
 | `members` | 邀请码兑换后写入；帖子/回复的 RLS 要求既是 Google 登录又是 member |
-| `posts` | author_id（客户端不可读）, title, body, upvote_count。没有 category / is_anonymous——发帖在产品上就是匿名 |
+| `posts` | author_id（客户端不可读）, title, body, upvote_count, updated_at。编辑走列级 UPDATE；删除走 `delete_own_post()`。没有 category / is_anonymous——发帖在产品上就是匿名 |
 | `replies` | post_id, author_id（客户端不可读）, body, author_name, author_avatar_url, is_anonymous, upvote_count |
 | `reply_votes` | user_id, reply_id；配合 `toggle_reply_vote()` |
 | `post_votes` | user_id, post_id；配合 `toggle_post_vote()`。含义是「好问题」，不是帖级加精 |

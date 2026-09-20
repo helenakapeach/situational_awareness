@@ -50,7 +50,7 @@ npm run dev
    npx supabase@2.117.0 db push
    ```
 
-   `db push` 成功才算数据库就绪。缺哪一条 migration，对应功能就会在网页上失败（例如没有 `reply_is_mine` 时，feed 会整页挂掉）。
+   `db push` 成功才算数据库就绪。缺哪一条 migration，对应功能就会在网页上失败（例如没有 `reply_is_mine` / `post_is_mine` 时，feed 会整页挂掉）。
 
 ### 3. 打开 Google 登录，关掉邮箱注册
 
@@ -193,6 +193,6 @@ git log --oneline origin/main -- supabase/migrations/
 |---|---|
 | 线上是演示横幅，登录不走 Google | GitHub Actions Variables 没配，或名字拼错 |
 | 登录后一直要邀请码 / 没权限 | 没 `db push`、没有 `members` 表，或还没插邀请码 |
-| 讨论列表一进来就失败 | 网页比数据库新，缺 migration（现在最常见的是缺 `reply_is_mine`） |
+| 讨论列表一进来就失败 | 网页比数据库新，缺 migration（现在最常见的是缺 `reply_is_mine` 或 `post_is_mine`） |
 | Google 登录弹窗报 redirect mismatch | JavaScript origin 或 Redirect URL 没包含当前站点 |
 | 本地 `file://` 打开是乱码或不能登录 | 要用 `npm run dev`，不要直接打开 HTML |

@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { LIMITS, normalizeInviteCode, sortReplies, withVoteState } from './lib.js'
 
-const DEMO_STORAGE_KEY = 'situational-awareness-demo-v4'
+const DEMO_STORAGE_KEY = 'situational-awareness-demo-v6'
 const DEMO_SESSION_KEY = 'situational-awareness-demo-session'
 const DEMO_MEMBER_KEY = 'situational-awareness-demo-member'
 const DEMO_INVITE_CODE = 'DEMO2026'
@@ -28,15 +28,19 @@ function initialDemoData() {
       {
         id: 2,
         title: '老板让我接一个高曝光项目，但资源明显不够，该接吗？',
-        body: '项目能让我接触到更高层，但时间线不现实，而且没有明确的人力支持。我担心接了做砸，不接又像是在躲机会。\n\n我目前在权衡：\n\n- **接**：曝光高，但资源缺口很大\n- **不接**：保住质量，但可能被看成回避机会\n\n你们会怎么判断？',
+        body: '项目能让我接触到更高层，但时间线不现实，而且没有明确的人力支持。我担心接了做砸，不接又像是在躲机会。\n\n背景大概是这样：上周例会上老板当众点名，说这个项目能让业务侧看到我们，也是我第一次有机会和 VP 一起开会。听起来像晋升前的试金石，但细看资源缺口很大。\n\n现在手上已经有两条在跑的线，其中一条下周就要验收。新项目口头说「两周出一版」，实际范围还在涨：要对接三个内部系统，其中两个没有文档，对接人要到下个月才有空。人力上只答应「先做起来再看」，没有明确编制。\n\n我目前在权衡：\n\n- **接**：曝光高，但资源缺口很大，失败会被看见\n- **不接**：保住质量，但可能被看成回避机会\n\n你们会怎么判断？有没有在类似「机会很大、条件很差」的局里站稳过的经验？',
+        author_id: 'seed-poster',
         created_at: hoursAgo(2),
+        updated_at: null,
         upvote_count: 3,
       },
       {
         id: 1,
         title: '如何告诉同事：他的方案方向可能从一开始就错了？',
         body: '我们关系不错，但他已经在这个方案上投入很多。我有一些用户数据支持不同方向，不想让反馈听起来像是在否定他本人。',
+        author_id: 'seed-poster',
         created_at: hoursAgo(27),
+        updated_at: null,
         upvote_count: 5,
       },
     ],
@@ -59,7 +63,7 @@ function initialDemoData() {
         author_name: '林然',
         author_avatar_url: '',
         is_anonymous: false,
-        body: '我会先把 **接项目** 和 **接受当前资源条件** 拆开。可以接，但先写成一页请老板选择取舍：\n\n1. 成功条件是什么\n2. 缺哪些人和时间\n3. 做不到时怎么收场',
+        body: '我会先把 **接项目** 和 **接受当前资源条件** 拆开。可以接，但先写成一页请老板选择取舍：\n\n1. 成功条件是什么\n2. 缺哪些人和时间\n3. 做不到时怎么收场\n\n口头答应最容易变成默认你已经接下全部条件。把选择权交回去，既保住机会，也不用一个人扛缺口。如果这一页他不愿意签，那其实已经回答了「该不该接」。',
         created_at: hoursAgo(1),
         upvote_count: 1,
       },
@@ -70,7 +74,7 @@ function initialDemoData() {
         author_name: '周宁',
         author_avatar_url: '',
         is_anonymous: false,
-        body: '如果对方在意面子，可以把数据框成“我们一起还没解释清楚的现象”，让他有空间把方案改成自己的下一版，而不是被当众纠正。',
+        body: '如果对方在意面子，可以把数据框成“我们一起还没解释清楚的现象”，让他有空间把方案改成自己的下一版，而不是被当众纠正。\n\n先肯定他已经投入的部分，再把数据当成共同要解释的信号，而不是当场判方案死刑。私下给一版「你来主导下一轮」的台阶，比在会上直接推翻更不容易伤关系。',
         created_at: hoursAgo(10),
         upvote_count: 3,
       },
@@ -92,7 +96,7 @@ function initialDemoData() {
         author_name: '匿名成员',
         author_avatar_url: '',
         is_anonymous: true,
-        body: '如果时间允许，可以先私下聊，不要在大会议里第一次提出。给对方保留重新包装方案的空间。',
+        body: '如果时间允许，可以先私下聊，不要在大会议里第一次提出。给对方保留重新包装方案的空间。\n\n会上第一次摊牌，对方几乎只能防守。私下把数据和你的担心说清楚，让他有时间把方向改成自己的下一版，公开场合就只需要对齐，不必当众认错。关系还能用，方向也有机会被修正。',
         created_at: hoursAgo(21),
         upvote_count: 3,
       },
@@ -199,7 +203,7 @@ export function createBackend() {
     async listPosts({ before = null } = {}) {
       let query = supabase
         .from('posts')
-        .select('id,title,body,created_at,upvote_count,post_votes(post_id)')
+        .select('id,title,body,created_at,updated_at,upvote_count,is_mine:post_is_mine,post_votes(post_id)')
         .order('created_at', { ascending: false })
         .limit(LIMITS.pageSize)
 
@@ -232,6 +236,22 @@ export function createBackend() {
 
     async createPost(post) {
       const { error } = await supabase.from('posts').insert(post)
+      if (error) throw error
+    },
+
+    async updatePost(postId, post) {
+      const { data, error } = await supabase
+        .from('posts')
+        .update(post)
+        .eq('id', postId)
+        .select('id')
+
+      if (error) throw error
+      if (!data?.length) throw new Error('这条讨论已经不存在，或不是你的。')
+    },
+
+    async deletePost(postId) {
+      const { error } = await supabase.rpc('delete_own_post', { p_post_id: postId })
       if (error) throw error
     },
 
@@ -366,20 +386,26 @@ function createDemoBackend() {
         .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
         .filter((post) => cutoff === null || new Date(post.created_at).getTime() < cutoff)
         .slice(0, LIMITS.pageSize)
-        .map((post) => ({
-          ...withVoteState(post, likedPostIds.has(Number(post.id))),
-          replies: sortReplies(
-            data.replies
-              .filter((reply) => String(reply.post_id) === String(post.id))
-              .map((reply) => {
-                const { author_id, ...rest } = reply
-                return withVoteState(
-                  { ...rest, is_mine: author_id === demoUser.id },
-                  likedReplyIds.has(Number(reply.id)),
-                )
-              }),
-          ),
-        }))
+        .map((post) => {
+          const { author_id, ...rest } = post
+          return {
+            ...withVoteState(
+              { ...rest, is_mine: author_id === demoUser.id },
+              likedPostIds.has(Number(post.id)),
+            ),
+            replies: sortReplies(
+              data.replies
+                .filter((reply) => String(reply.post_id) === String(post.id))
+                .map((reply) => {
+                  const { author_id: replyAuthorId, ...replyRest } = reply
+                  return withVoteState(
+                    { ...replyRest, is_mine: replyAuthorId === demoUser.id },
+                    likedReplyIds.has(Number(reply.id)),
+                  )
+                }),
+            ),
+          }
+        })
     },
 
     async createPost(post) {
@@ -387,9 +413,40 @@ function createDemoBackend() {
       data.posts.unshift({
         id: data.nextPostId++,
         ...post,
+        author_id: demoUser.id,
         upvote_count: 0,
         created_at: new Date().toISOString(),
+        updated_at: null,
       })
+      writeData(data)
+    },
+
+    async updatePost(postId, next) {
+      const data = readData()
+      const post = data.posts.find((item) => String(item.id) === String(postId))
+      if (!post || post.author_id !== demoUser.id) {
+        throw new Error('这条讨论已经不存在，或不是你的。')
+      }
+      post.title = next.title
+      post.body = next.body
+      post.updated_at = new Date().toISOString()
+      writeData(data)
+    },
+
+    async deletePost(postId) {
+      const data = readData()
+      const post = data.posts.find((item) => String(item.id) === String(postId))
+      if (!post || post.author_id !== demoUser.id) {
+        throw new Error('这条讨论已经不存在，或不是你的。')
+      }
+      const id = String(postId)
+      const replyIds = new Set(
+        data.replies.filter((reply) => String(reply.post_id) === id).map((reply) => String(reply.id)),
+      )
+      data.posts = data.posts.filter((item) => String(item.id) !== id)
+      data.replies = data.replies.filter((reply) => String(reply.post_id) !== id)
+      data.reply_votes = (data.reply_votes || []).filter((vote) => !replyIds.has(String(vote.reply_id)))
+      data.post_votes = (data.post_votes || []).filter((vote) => String(vote.post_id) !== id)
       writeData(data)
     },
 

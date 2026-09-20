@@ -148,10 +148,11 @@ test('markdown only allows http(s) and mailto links', () => {
 })
 
 test('plain excerpts strip markdown and respect unicode length', () => {
-  assert.equal(excerptPlain('我会先把 **接项目** 拆开。'), '我会先把接项目拆开')
-  assert.equal(excerptPlain('先验证。不急着承诺。'), '先验证…')
+  assert.equal(excerptPlain('我会先把 **接项目** 和 **接受** 拆开。'), '我会先把接项目和接受拆开。')
+  assert.equal(excerptPlain('先验证。不急着承诺。'), '先验证。不急着承诺。')
   assert.equal(excerptPlain('[看这里](https://example.com) 就行'), '看这里就行')
   assert.equal(excerptPlain('一二三四五', 3), '一二三…')
+  assert.equal(excerptPlain('这句话后面还有很多补充说明，不能只留第一句。', 8), '这句话后面还有很…')
   assert.equal(excerptPlain('   '), '')
 })
 

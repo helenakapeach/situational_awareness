@@ -72,6 +72,7 @@ let searchQuery = ''
 // 没提交的字一起扔掉。草稿存在 DOM 之外，重绘后再填回去。
 const replyDrafts = new Map()
 const editDrafts = new Map()
+const postEditDrafts = new Map()
 
 function showPanel(name) {
   elements.panels.forEach((panel) => {
@@ -547,15 +548,51 @@ function namedRepliers(replies, limit = 4) {
 function makeInsightPreview(reply) {
   const preview = element('div', 'insight-preview')
   const who = reply.is_anonymous ? '匿名成员' : reply.author_name || 'Google 用户'
-  preview.append(
-    element('span', 'insight-preview-who', who),
-    element('p', 'insight-preview-body', excerptPlain(reply.body)),
-  )
+  const byline = element('span', 'insight-preview-who')
+  byline.append(element('span', 'insight-preview-mark', '高赞'), who)
+  preview.append(byline, element('p', 'insight-preview-body', excerptPlain(reply.body, 160)))
   return preview
+}
+
+function bodyMoreButton(body) {
+  const next = body.nextElementSibling
+  return next?.classList.contains('body-more') ? next : null
+}
+
+function setupCollapsibleBody(body, attempts = 0) {
+  if (body.dataset.collapseReady || body.hidden) return
+  if (!body.isConnected) {
+    if (attempts < 4) requestAnimationFrame(() => setupCollapsibleBody(body, attempts + 1))
+    return
+  }
+
+  body.dataset.collapseReady = '1'
+  body.classList.add('is-collapsed')
+  if (body.scrollHeight <= body.clientHeight + 4) {
+    body.classList.remove('is-collapsed')
+    return
+  }
+
+  const more = element('button', 'text-button body-more', '全文')
+  more.type = 'button'
+  more.setAttribute('aria-expanded', 'false')
+  more.addEventListener('click', () => {
+    const collapsed = body.classList.toggle('is-collapsed')
+    more.textContent = collapsed ? '全文' : '收起'
+    more.setAttribute('aria-expanded', String(!collapsed))
+  })
+  body.after(more)
+}
+
+function forgetPostDrafts(post) {
+  postEditDrafts.delete(String(post.id))
+  replyDrafts.delete(String(post.id))
+  for (const reply of post.replies) editDrafts.delete(String(reply.id))
 }
 
 function makePost(post, shouldOpen = false) {
   const article = element('article', 'post-card')
+  const draftKey = String(post.id)
 
   const header = element('header', 'post-header')
   header.append(makeAvatar('', '', true))
@@ -564,6 +601,9 @@ function makePost(post, shouldOpen = false) {
     element('strong', 'post-author', '匿名成员'),
     element('time', 'post-time', formatRelativeTime(post.created_at)),
   )
+  if (post.updated_at) {
+    meta.append(element('span', 'reply-edited', '已编辑'))
+  }
   header.append(meta)
 
   const heading = element('div', 'post-heading')
@@ -572,8 +612,7 @@ function makePost(post, shouldOpen = false) {
 
   // 有草稿却折叠起来，等于把它藏没了
   const hasDraft =
-    replyDrafts.has(String(post.id)) ||
-    post.replies.some((reply) => editDrafts.has(String(reply.id)))
+    replyDrafts.has(draftKey) || post.replies.some((reply) => editDrafts.has(String(reply.id)))
 
   const open = shouldOpen || hasDraft
   const toggle = element('button', 'thread-toggle')
@@ -620,11 +659,137 @@ function makePost(post, shouldOpen = false) {
 
   const topReply = post.replies[0]
   const insight = topReply && Number(topReply.upvote_count) > 0 ? topReply : null
+  const insightEl = insight ? makeInsightPreview(insight) : null
   const engage = element('div', 'post-engage')
   engage.append(toggle)
   article.append(header, heading, body)
-  if (insight) article.append(makeInsightPreview(insight))
+  if (insightEl) article.append(insightEl)
   article.append(engage, panel)
+
+  function showView() {
+    postEditDrafts.delete(draftKey)
+    heading.hidden = false
+    body.hidden = false
+    if (insightEl) insightEl.hidden = false
+    const more = bodyMoreButton(body)
+    if (more) more.hidden = false
+    article.querySelector('.post-edit')?.remove()
+    requestAnimationFrame(() => setupCollapsibleBody(body))
+  }
+
+  function enterEdit({ focus = true } = {}) {
+    if (article.querySelector('.post-edit')) return
+
+    heading.hidden = true
+    body.hidden = true
+    if (insightEl) insightEl.hidden = true
+    const more = bodyMoreButton(body)
+    if (more) more.hidden = true
+
+    const draft = postEditDrafts.get(draftKey)
+    const form = element('form', 'post-edit')
+    const titleLabel = element('label', '', '一句话标题')
+    const titleInput = document.createElement('input')
+    const bodyLabel = element('label', '', '具体发生了什么？')
+    const textarea = document.createElement('textarea')
+    const actions = element('div', 'composer-actions')
+    const count = element('span', 'character-count')
+    const cancel = element('button', 'text-button', '取消')
+    const save = element('button', 'secondary-button', '保存')
+
+    titleLabel.htmlFor = `edit-post-title-${post.id}`
+    titleInput.id = `edit-post-title-${post.id}`
+    titleInput.name = 'title'
+    titleInput.type = 'text'
+    titleInput.autocomplete = 'off'
+    titleInput.required = true
+    titleInput.minLength = LIMITS.titleMin
+    titleInput.maxLength = LIMITS.titleMax
+    titleInput.value = draft?.title ?? post.title
+
+    bodyLabel.htmlFor = `edit-post-body-${post.id}`
+    textarea.id = `edit-post-body-${post.id}`
+    textarea.name = 'body'
+    textarea.rows = 4
+    textarea.required = true
+    textarea.maxLength = LIMITS.postMax
+    textarea.value = draft?.body ?? post.body
+
+    cancel.type = 'button'
+    save.type = 'submit'
+
+    function rememberDraft() {
+      postEditDrafts.set(draftKey, { title: titleInput.value, body: textarea.value })
+    }
+
+    attachCharacterCount(textarea, count, LIMITS.postMax)
+    titleInput.addEventListener('input', rememberDraft)
+    textarea.addEventListener('input', rememberDraft)
+    rememberDraft()
+    cancel.addEventListener('click', showView)
+    actions.append(count, cancel, save)
+    form.append(titleLabel, titleInput, bodyLabel, textarea, actions)
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault()
+      const result = validatePost(titleInput.value, textarea.value)
+      if (!result.ok) {
+        showToast(result.message, 'error')
+        titleInput.focus()
+        return
+      }
+
+      setButtonBusy(save, true, '保存中…')
+      try {
+        await backend.updatePost(post.id, result.value)
+        postEditDrafts.delete(draftKey)
+        await loadPosts({ preserveOpenPost: draftKey })
+        showToast('讨论已更新。')
+      } catch (error) {
+        showToast(friendlyError(error), 'error')
+        setButtonBusy(save, false)
+      }
+    })
+
+    heading.after(form)
+    if (focus) {
+      titleInput.focus()
+      titleInput.setSelectionRange(titleInput.value.length, titleInput.value.length)
+    }
+  }
+
+  if (post.is_mine) {
+    const own = element('div', 'post-own-actions')
+    const edit = element('button', 'text-button', '编辑')
+    const remove = element('button', 'text-button danger', '删除')
+    edit.type = 'button'
+    remove.type = 'button'
+    edit.addEventListener('click', () => enterEdit())
+    remove.addEventListener('click', async () => {
+      const confirmed = await confirmAction({
+        title: '删除这条讨论？',
+        body: '回复和赞也会一起去掉，删掉之后没法恢复。',
+        confirmLabel: '删除',
+      })
+      if (!confirmed) return
+
+      setButtonBusy(remove, true, '删除中…')
+      try {
+        await backend.deletePost(post.id)
+        forgetPostDrafts(post)
+        await loadPosts()
+        showToast('讨论已删除。')
+      } catch (error) {
+        showToast(friendlyError(error), 'error')
+        setButtonBusy(remove, false)
+      }
+    })
+    own.append(edit, remove)
+    header.append(own)
+  }
+
+  if (postEditDrafts.has(draftKey)) enterEdit({ focus: false })
+  requestAnimationFrame(() => setupCollapsibleBody(body))
   return article
 }
 
@@ -652,6 +817,9 @@ function renderFeed(previouslyOpen = new Set()) {
     visible.forEach((post) =>
       elements.feed.append(makePost(post, previouslyOpen.has(String(post.id)))),
     )
+    requestAnimationFrame(() => {
+      elements.feed.querySelectorAll('.post-body').forEach((body) => setupCollapsibleBody(body))
+    })
     return
   }
 
@@ -734,6 +902,7 @@ async function renderSession(nextSession) {
     hasMorePosts = false
     replyDrafts.clear()
     editDrafts.clear()
+    postEditDrafts.clear()
     searchQuery = ''
     elements.searchInput.value = ''
     showPanel('feed')

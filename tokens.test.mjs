@@ -52,7 +52,7 @@ function extractBlock(css, selector) {
    如果某个组合不在这张表里，就是不允许出现在界面上的。 */
 
 const TEXT_ON = {
-  text: ["bg", "surface", "surface-sunken"],
+  text: ["bg", "surface", "surface-sunken", "insight-tint"],
   "text-soft": ["bg", "surface", "surface-sunken"],
   "text-faint": ["bg", "surface", "surface-sunken"],
   // 只用于品牌色填充块。深色导航区【不用】这个令牌——见 --chrome-text。

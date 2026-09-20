@@ -779,6 +779,7 @@ textarea::placeholder {
 
 .post-meta {
   display: flex;
+  min-width: 0;
   min-height: 34px;
   flex-wrap: wrap;
   align-content: center;
@@ -816,6 +817,19 @@ textarea::placeholder {
   line-height: 1.45;
 }
 
+.post-edit {
+  margin-top: 8px;
+}
+
+.post-edit label {
+  margin: 10px 0 5px;
+  font-size: 13px;
+}
+
+.post-edit textarea {
+  min-height: 96px;
+}
+
 .post-body,
 .reply-body {
   overflow-wrap: anywhere;
@@ -828,27 +842,59 @@ textarea::placeholder {
   line-height: 1.78;
 }
 
+.post-body.is-collapsed {
+  max-height: calc(1.78em * 2);
+  max-height: 2lh;
+  overflow: hidden;
+}
+
+.post-body.is-collapsed.markdown-body > * {
+  margin-bottom: 0;
+}
+
+.body-more {
+  margin-top: 4px;
+  color: var(--brand);
+}
+
+.body-more:hover {
+  color: var(--brand-hover);
+}
+
 .insight-preview {
-  margin: 16px 0 0;
-  padding: 10px 12px 10px 14px;
+  margin: 14px 0 0;
+  padding: 14px 16px 15px 18px;
   background: var(--insight-tint);
   border-left: 3px solid var(--insight);
   border-radius: 0 8px 8px 0;
 }
 
 .insight-preview-who {
-  display: block;
-  margin-bottom: 3px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
   color: var(--insight-text);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.insight-preview-mark {
   font-size: 11px;
   font-weight: 700;
+  letter-spacing: 0.06em;
 }
 
 .insight-preview-body {
+  display: -webkit-box;
   margin: 0;
-  color: var(--insight-text);
-  font-size: 14px;
-  line-height: 1.55;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.7;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
 }
 
 .post-faces {
@@ -1032,9 +1078,18 @@ textarea::placeholder {
   margin-top: 10px;
 }
 
-.reply-own-actions {
+.reply-own-actions,
+.post-own-actions {
   display: flex;
   gap: 14px;
+}
+
+.post-own-actions {
+  flex: none;
+  align-items: center;
+  align-self: center;
+  min-height: 34px;
+  margin-left: auto;
 }
 
 .text-button.danger:hover,

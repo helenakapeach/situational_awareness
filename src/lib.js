@@ -131,15 +131,11 @@ export function excerptPlain(source, max = 48) {
     .replace(/\*([^*]+)\*/g, '$1')
     .replace(/[#>`_~]+/g, '')
     .replace(/\s+/g, ' ')
-    .replace(/([\u3400-\u9FFF])\s+([\u3400-\u9FFF])/g, '$1$2')
+    .replace(/([\u3400-\u9FFF])\s+(?=[\u3400-\u9FFF])/g, '$1')
     .trim()
-  const sentence = text.split(/[。！？]/)[0].trim() || text
-  const chars = [...sentence]
-  if (chars.length > max) {
-    return `${chars.slice(0, max).join('').trim()}…`
-  }
-  const rest = text.slice(sentence.length).replace(/[。！？\s]+/g, '')
-  return rest ? `${sentence}…` : sentence
+  const chars = [...text]
+  if (chars.length <= max) return text
+  return `${chars.slice(0, max).join('').trim()}…`
 }
 
 export function compareReplies(a, b) {
