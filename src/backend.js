@@ -200,10 +200,12 @@ export function createBackend() {
 
     // 游标用 created_at 而不是 offset：翻页过程中有人发帖也不会让某一条
     // 被挤到下一页而漏掉，或者重复出现一次。
+    // MMMVP 不读取 computed ownership fields。PostgREST 为计算整个 row type
+    // 会要求 author_id 的 SELECT 权限，而开放该列会破坏匿名发帖。
     async listPosts({ before = null } = {}) {
       let query = supabase
         .from('posts')
-        .select('id,title,body,created_at,updated_at,upvote_count,is_mine:post_is_mine,post_votes(post_id)')
+        .select('id,title,body,created_at,updated_at,upvote_count,post_votes(post_id)')
         .order('created_at', { ascending: false })
         .limit(LIMITS.pageSize)
 
@@ -216,7 +218,7 @@ export function createBackend() {
 
       const { data: replies, error: repliesError } = await supabase
         .from('replies')
-        .select('id,post_id,author_name,author_avatar_url,is_anonymous,body,created_at,updated_at,upvote_count,is_mine:reply_is_mine,reply_votes(reply_id)')
+        .select('id,post_id,author_name,author_avatar_url,is_anonymous,body,created_at,updated_at,upvote_count,reply_votes(reply_id)')
         .in('post_id', posts.map((post) => post.id))
 
       if (repliesError) throw repliesError
@@ -225,11 +227,13 @@ export function createBackend() {
       for (const { reply_votes, ...reply } of replies || []) {
         const key = String(reply.post_id)
         if (!repliesByPost.has(key)) repliesByPost.set(key, [])
-        repliesByPost.get(key).push(withVoteState(reply, reply_votes && reply_votes.length > 0))
+        repliesByPost
+          .get(key)
+          .push(withVoteState({ ...reply, is_mine: false }, reply_votes && reply_votes.length > 0))
       }
 
       return posts.map(({ post_votes, ...post }) => ({
-        ...withVoteState(post, post_votes && post_votes.length > 0),
+        ...withVoteState({ ...post, is_mine: false }, post_votes && post_votes.length > 0),
         replies: sortReplies(repliesByPost.get(String(post.id)) || []),
       }))
     },
