@@ -106,6 +106,17 @@ a:focus-visible {
   height: 31px;
 }
 
+.login-help {
+  margin-top: 24px;
+  text-align: left;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.login-help summary {
+  cursor: pointer;
+}
+
 .login-card {
   width: min(100%, 620px);
   padding: clamp(30px, 7vw, 64px);

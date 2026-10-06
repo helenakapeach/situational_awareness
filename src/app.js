@@ -40,6 +40,7 @@ const elements = {
   loading: document.querySelector('#loading-view'),
   login: document.querySelector('#signed-out-view'),
   loginButton: document.querySelector('#login-button'),
+  copyLoginLink: document.querySelector('#copy-login-link'),
   logoutButton: document.querySelector('#logout-button'),
   panelLinks: document.querySelectorAll('.panel-link'),
   panels: document.querySelectorAll('.panel'),
@@ -931,6 +932,16 @@ async function renderSession(nextSession) {
   setView('app')
   await loadPosts()
 }
+
+elements.copyLoginLink.addEventListener('click', async () => {
+  const url = new URL(window.location.pathname, window.location.origin).href
+  try {
+    await navigator.clipboard.writeText(url)
+    showToast('链接已复制，请在 Safari 或 Chrome 中打开。')
+  } catch {
+    showToast('请从浏览器地址栏复制网站链接，在 Safari 或 Chrome 中打开。', 'error')
+  }
+})
 
 elements.loginButton.addEventListener('click', async () => {
   setButtonBusy(elements.loginButton, true, '正在登录…')

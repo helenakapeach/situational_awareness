@@ -206,8 +206,8 @@ export function createBackend() {
 
     // 游标用 created_at 而不是 offset：翻页过程中有人发帖也不会让某一条
     // 被挤到下一页而漏掉，或者重复出现一次。
-    // MMMVP 不读取 computed ownership fields。PostgREST 为计算整个 row type
-    // 会要求 author_id 的 SELECT 权限，而开放该列会破坏匿名发帖。
+    // Ownership comes from a scoped RPC, without exposing author_id or
+    // requiring SELECT on the whole row for a PostgREST computed field.
     async listPosts({ before = null } = {}) {
       let query = supabase
         .from('posts')
@@ -229,17 +229,24 @@ export function createBackend() {
 
       if (repliesError) throw repliesError
 
+      const { data: ownership, error: ownershipError } = await supabase.rpc('own_content_ids', {
+        p_post_ids: posts.map((post) => post.id),
+      })
+      if (ownershipError) throw ownershipError
+      const ownPosts = new Set((ownership?.posts || []).map(String))
+      const ownReplies = new Set((ownership?.replies || []).map(String))
+
       const repliesByPost = new Map()
       for (const { reply_votes, ...reply } of replies || []) {
         const key = String(reply.post_id)
         if (!repliesByPost.has(key)) repliesByPost.set(key, [])
         repliesByPost
           .get(key)
-          .push(withVoteState({ ...reply, is_mine: false }, reply_votes && reply_votes.length > 0))
+          .push(withVoteState({ ...reply, is_mine: ownReplies.has(String(reply.id)) }, reply_votes && reply_votes.length > 0))
       }
 
       return posts.map(({ post_votes, ...post }) => ({
-        ...withVoteState({ ...post, is_mine: false }, post_votes && post_votes.length > 0),
+        ...withVoteState({ ...post, is_mine: ownPosts.has(String(post.id)) }, post_votes && post_votes.length > 0),
         replies: sortReplies(repliesByPost.get(String(post.id)) || []),
       }))
     },
