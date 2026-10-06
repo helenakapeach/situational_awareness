@@ -47,9 +47,11 @@ const elements = {
   composerHint: document.querySelector('#composer-hint'),
   composerToggle: document.querySelector('#composer-toggle'),
   composerToggleLabel: document.querySelector('#composer-toggle-label'),
+  postAnonymous: document.querySelector('#post-anonymous'),
   postBody: document.querySelector('#post-body'),
   postCharacterCount: document.querySelector('#post-character-count'),
   postForm: document.querySelector('#post-form'),
+  postIdentity: document.querySelector('#post-identity'),
   postTitle: document.querySelector('#post-title'),
   refreshButton: document.querySelector('#refresh-button'),
   searchInput: document.querySelector('#search-input'),
@@ -355,6 +357,12 @@ function replyIdentityText(anonymous) {
     : `将以 ${displayName(session?.user)} 的名义回复`
 }
 
+function postIdentityText(anonymous) {
+  return anonymous
+    ? '将以匿名身份发布'
+    : `将以 ${displayName(session?.user)} 的名义发布`
+}
+
 function makeThumbsUpIcon() {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
   svg.setAttribute('viewBox', '0 0 24 24')
@@ -593,12 +601,13 @@ function forgetPostDrafts(post) {
 function makePost(post, shouldOpen = false) {
   const article = element('article', 'post-card')
   const draftKey = String(post.id)
+  const anonymous = Boolean(post.is_anonymous)
 
   const header = element('header', 'post-header')
-  header.append(makeAvatar('', '', true))
+  header.append(makeAvatar(post.author_name, post.author_avatar_url, anonymous))
   const meta = element('div', 'post-meta')
   meta.append(
-    element('strong', 'post-author', '匿名成员'),
+    element('strong', 'post-author', anonymous ? '匿名成员' : post.author_name || 'Google 用户'),
     element('time', 'post-time', formatRelativeTime(post.created_at)),
   )
   if (post.updated_at) {
@@ -1056,13 +1065,19 @@ function composerDraftLabel() {
 
 function updateComposerToggle() {
   const draft = composerHasDraft()
+  const anonymous = elements.postAnonymous.checked
   elements.composerToggleLabel.textContent = draft ? composerDraftLabel() : '最近遇到什么事了？'
-  elements.composerHint.textContent = draft ? '继续编辑' : '匿名发布'
+  elements.composerHint.textContent = draft ? '继续编辑' : anonymous ? '匿名发布' : '实名发布'
   elements.composerToggle.classList.toggle('has-draft', draft)
   elements.composerToggle.setAttribute(
     'aria-label',
-    draft ? `继续编辑：${composerDraftLabel()}` : '写一个匿名问题',
+    draft ? `继续编辑：${composerDraftLabel()}` : `写一个${anonymous ? '匿名' : '实名'}问题`,
   )
+}
+
+function updatePostIdentity() {
+  elements.postIdentity.textContent = postIdentityText(elements.postAnonymous.checked)
+  updateComposerToggle()
 }
 
 function setComposerOpen(open, { focus = true } = {}) {
@@ -1081,6 +1096,7 @@ function setComposerOpen(open, { focus = true } = {}) {
 elements.composerToggle.addEventListener('click', () => setComposerOpen(true))
 elements.postTitle.addEventListener('input', updateComposerToggle)
 elements.postBody.addEventListener('input', updateComposerToggle)
+elements.postAnonymous.addEventListener('change', updatePostIdentity)
 
 elements.postForm.addEventListener('keydown', (event) => {
   if (event.key !== 'Escape') return
@@ -1101,12 +1117,14 @@ elements.postForm.addEventListener('submit', async (event) => {
   const button = elements.postForm.querySelector('button[type="submit"]')
   setButtonBusy(button, true, '发布中…')
   try {
-    await backend.createPost(result.value)
+    const post = { ...result.value, is_anonymous: elements.postAnonymous.checked }
+    await backend.createPost(post)
     elements.postForm.reset()
     renderPostCount()
+    updatePostIdentity()
     setComposerOpen(false, { focus: false })
     await loadPosts()
-    showToast('已匿名发布。')
+    showToast(post.is_anonymous ? '已匿名发布。' : '问题已发布。')
   } catch (error) {
     showToast(friendlyError(error), 'error')
   } finally {
@@ -1114,7 +1132,7 @@ elements.postForm.addEventListener('submit', async (event) => {
   }
 })
 
-updateComposerToggle()
+updatePostIdentity()
 
 async function start() {
   applyLimits()

@@ -187,7 +187,7 @@
               aria-controls="composer-fields"
             >
               <span id="composer-toggle-label">最近遇到什么事了？</span>
-              <span id="composer-hint" class="composer-hint">匿名发布</span>
+              <span id="composer-hint" class="composer-hint">匿名或实名发布</span>
             </button>
 
             <div id="composer-fields" hidden>
@@ -212,8 +212,21 @@
               ></textarea>
 
               <div class="composer-actions">
+                <div class="reply-meta">
+                  <label class="checkbox-line" for="post-anonymous">
+                    <input
+                      id="post-anonymous"
+                      name="anonymous"
+                      type="checkbox"
+                      aria-describedby="post-identity"
+                      checked
+                    />
+                    匿名发帖
+                  </label>
+                  <span id="post-identity" class="reply-identity">将以匿名身份发布</span>
+                </div>
                 <span id="post-character-count" class="character-count"></span>
-                <button class="primary-button" type="submit">匿名发布</button>
+                <button class="primary-button" type="submit">发布问题</button>
               </div>
             </div>
           </form>
