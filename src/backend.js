@@ -224,7 +224,7 @@ export function createBackend() {
 
       const { data: replies, error: repliesError } = await supabase
         .from('replies')
-        .select('id,post_id,author_name,author_avatar_url,is_anonymous,body,created_at,updated_at,upvote_count,reply_votes(reply_id)')
+        .select('id,post_id,parent_reply_id,author_name,author_avatar_url,is_anonymous,body,created_at,updated_at,upvote_count,reply_votes(reply_id)')
         .in('post_id', posts.map((post) => post.id))
 
       if (repliesError) throw repliesError
@@ -481,9 +481,14 @@ function createDemoBackend() {
     async createReply(postId, reply) {
       const data = readData()
       const isAnonymous = Boolean(reply.is_anonymous)
+      const parent = reply.parent_reply_id == null ? null : data.replies.find(item => String(item.id) === String(reply.parent_reply_id))
+      if (reply.parent_reply_id != null && (!parent || String(parent.post_id) !== String(postId))) {
+        throw new Error('要回复的评论已经不存在。')
+      }
       data.replies.push({
         id: data.nextReplyId++,
         post_id: postId,
+        parent_reply_id: parent?.id ?? null,
         author_id: demoUser.id,
         author_name: isAnonymous ? '匿名成员' : demoUser.user_metadata.full_name,
         author_avatar_url: '',
@@ -569,7 +574,9 @@ function createDemoBackend() {
       if (!reply || reply.author_id !== demoUser.id) {
         throw new Error('这条回复已经不存在，或不是你的。')
       }
-      data.replies = data.replies.filter((item) => String(item.id) !== String(replyId))
+      data.replies = data.replies.filter((item) => String(item.id) !== String(replyId)).map(item =>
+        String(item.parent_reply_id) === String(replyId) ? { ...item, parent_reply_id: null } : item,
+      )
       data.reply_votes = (data.reply_votes || []).filter(
         (vote) => String(vote.reply_id) !== String(replyId),
       )
