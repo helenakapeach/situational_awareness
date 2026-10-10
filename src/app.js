@@ -63,6 +63,7 @@ const elements = {
 
 const THEME_KEY = 'situational-awareness-theme'
 
+let isAdmin = false
 let session = null
 let loadingPosts = false
 let toastTimer = null
@@ -352,7 +353,7 @@ function makeReplyToolbar(reply, { onEdit }) {
   const toolbar = element('div', 'reply-toolbar')
   toolbar.append(makeReplyVoteButton(reply))
 
-  if (!reply.is_mine) return toolbar
+  if (!reply.is_mine && !isAdmin) return toolbar
 
   const own = element('div', 'reply-own-actions')
   const edit = element('button', 'text-button', '编辑')
@@ -370,7 +371,8 @@ function makeReplyToolbar(reply, { onEdit }) {
 
     setButtonBusy(remove, true, '删除中…')
     try {
-      await backend.deleteReply(reply.id)
+      if (isAdmin) await backend.adminDeleteContent(reply.id, 'reply')
+      else await backend.deleteReply(reply.id)
       editDrafts.delete(String(reply.id))
       replyDrafts.delete(`${reply.post_id}:${reply.id}`)
       await loadPosts({ preserveOpenPost: String(reply.post_id) })
@@ -380,7 +382,8 @@ function makeReplyToolbar(reply, { onEdit }) {
       setButtonBusy(remove, false)
     }
   })
-  own.append(edit, remove)
+  if (reply.is_mine) own.append(edit)
+  own.append(remove)
   toolbar.append(own)
   return toolbar
 }
@@ -831,7 +834,7 @@ function makePost(post, shouldOpen = false) {
     }
   }
 
-  if (post.is_mine) {
+  if (post.is_mine || isAdmin) {
     const own = element('div', 'post-own-actions')
     const edit = element('button', 'text-button', '编辑')
     const remove = element('button', 'text-button danger', '删除')
@@ -848,7 +851,8 @@ function makePost(post, shouldOpen = false) {
 
       setButtonBusy(remove, true, '删除中…')
       try {
-        await backend.deletePost(post.id)
+        if (isAdmin) await backend.adminDeleteContent(post.id, 'post')
+        else await backend.deletePost(post.id)
         forgetPostDrafts(post)
         await loadPosts()
         showToast('讨论已删除。')
@@ -857,7 +861,8 @@ function makePost(post, shouldOpen = false) {
         setButtonBusy(remove, false)
       }
     })
-    own.append(edit, remove)
+    if (post.is_mine) own.append(edit)
+    own.append(remove)
     header.append(own)
   }
 
@@ -983,9 +988,14 @@ async function renderSession(nextSession) {
     return
   }
 
-  const isMember = await backend.isMember(session.user.id)
-  if (!isMember) {
-    elements.inviteError.hidden = true
+  const access = await backend.memberAccess()
+  isAdmin = access.is_admin
+  document.querySelector('#admin-tools').hidden = !isAdmin
+  if (!access.is_member) {
+    elements.inviteError.hidden = !access.is_disabled
+    elements.inviteError.textContent = access.is_disabled ? '此账号已被停用。如有疑问，请联系管理员。' : ''
+    elements.inviteForm.hidden = access.is_disabled
+    document.querySelector('#invite-title').textContent = access.is_disabled ? '账号已停用。' : '输入邀请码，加入讨论。'
     elements.inviteCodeInput.value = ''
     setView('invite')
     return
@@ -1229,3 +1239,34 @@ async function start() {
 }
 
 start()
+
+async function loadAdminMembers() {
+  const list = document.querySelector('#admin-members')
+  list.textContent = '加载中…'
+  try {
+    const members = await backend.adminMembers()
+    list.replaceChildren()
+    for (const member of members) {
+      const row = element('div', 'admin-member')
+      const identity = element('div')
+      identity.append(element('strong', '', member.name || '成员'), element('p', '', member.email || ''))
+      row.append(identity, element('span', '', member.is_admin ? '管理员' : member.is_disabled ? '已停用' : '正常'))
+      if (!member.is_admin) {
+        const button = element('button', 'text-button', member.is_disabled ? '恢复账号' : '停用账号')
+        button.type = 'button'
+        button.addEventListener('click', async () => {
+          if (!await confirmAction({ title: member.is_disabled ? '恢复这个账号？' : '停用这个账号？', body: `${member.name || '成员'}（${member.email || ''}）${member.is_disabled ? '将重新获得社区访问权限。' : '将无法访问社区、发帖、回复或点赞。已有内容会保留。'}`, confirmLabel: member.is_disabled ? '恢复' : '停用' })) return
+          setButtonBusy(button, true, '保存中…')
+          try {
+            await backend.adminSetDisabled(member.user_id, !member.is_disabled)
+            await loadAdminMembers()
+            showToast('账号状态已更新。')
+          } catch (error) { showToast(friendlyError(error), 'error'); setButtonBusy(button, false) }
+        })
+        row.append(button)
+      }
+      list.append(row)
+    }
+  } catch (error) { list.textContent = friendlyError(error) }
+}
+document.querySelector('#admin-load-members').addEventListener('click', loadAdminMembers)

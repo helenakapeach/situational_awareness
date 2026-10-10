@@ -110,6 +110,7 @@
         <p class="eyebrow">还差最后一步</p>
         <h1 id="invite-title" class="step-title">输入邀请码，加入讨论。</h1>
 
+        <p id="invite-error" class="invite-error" role="alert" hidden></p>
         <form id="invite-form">
           <label for="invite-code-input">邀请码</label>
           <input
@@ -120,7 +121,6 @@
             autocapitalize="characters"
             required
           />
-          <p id="invite-error" class="invite-error" role="alert" hidden></p>
           <div class="invite-actions">
             <button class="primary-button" type="submit">加入</button>
           </div>
@@ -305,6 +305,12 @@
             <strong>主页还没做。</strong>
             <p>以后这里会有公司、职业、届别，以及微信 / 邮箱 / LinkedIn 各自独立的可见性开关。</p>
           </div>
+          <section id="admin-tools" hidden>
+            <h2>管理员</h2>
+            <p>可直接删除讨论和回复。停用账号不会删除其已有内容。</p>
+            <button id="admin-load-members" class="secondary-button" type="button">查看 / 刷新成员</button>
+            <div id="admin-members" aria-live="polite"></div>
+          </section>
           <div class="me-actions">
             <button id="logout-button" class="secondary-button" type="button">退出登录</button>
           </div>
