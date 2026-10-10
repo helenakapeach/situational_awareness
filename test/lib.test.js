@@ -5,6 +5,7 @@ import {
   displayName,
   excerptPlain,
   formatRelativeTime,
+  groupReplyThreads,
   initials,
   normalizeInviteCode,
   safeAvatarUrl,
@@ -161,4 +162,26 @@ test('markdown headings do not outrank the post title', () => {
   assert.doesNotMatch(html, /<h[1-6]/)
   assert.match(html, /<strong>太大<\/strong>/)
   assert.match(html, /<strong>二级<\/strong>/)
+})
+
+test('threads retain exact targets, sort roots by votes, and children by time', () => {
+  const replies = [
+    { id: 1, post_id: 1, upvote_count: 1, created_at: '2026-01-01' },
+    { id: 2, post_id: 1, parent_reply_id: 1, upvote_count: 99, created_at: '2026-01-02' },
+    { id: 3, post_id: 1, parent_reply_id: 2, created_at: '2026-01-03' },
+    { id: 4, post_id: 1, upvote_count: 2, created_at: '2026-01-04' },
+  ]
+  const threads = groupReplyThreads([replies[2], replies[3], replies[1], replies[0]])
+  assert.deepEqual(threads.map(t => t.root.id), [4, 1])
+  assert.deepEqual(threads[1].children.map(r => r.id), [2, 3])
+  assert.equal(threads[1].children[1].parent_reply_id, 2)
+})
+
+test('legacy replies, missing parents and cross-post parents remain visible', () => {
+  const replies = [
+    { id: 1, post_id: 1 },
+    { id: 2, post_id: 1, parent_reply_id: 999 },
+    { id: 3, post_id: 2, parent_reply_id: 1 },
+  ]
+  assert.deepEqual(groupReplyThreads(replies).map(t => t.root.id), [1, 2, 3])
 })

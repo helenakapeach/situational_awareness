@@ -1345,3 +1345,19 @@ textarea::placeholder {
     animation-iteration-count: 1 !important;
   }
 }
+
+/* Conversations stay at one indentation level on small screens. */
+.reply-conversation { margin-top: 14px; border-left: 2px solid var(--border); padding-left: 14px; }
+.reply-conversation-toggle { cursor: pointer; color: var(--brand); font-size: 13px; padding: 6px 0; }
+.nested-replies { list-style: none; margin: 0; padding: 0; }
+.nested-replies .reply { padding: 14px 0; }
+.nested-replies .avatar { width: 28px; height: 28px; font-size: 12px; }
+.reply-context { display: block; color: var(--text-faint); font-size: 12px; margin: 7px 0; padding: 6px 10px; border-left: 2px solid var(--border); text-decoration: none; overflow-wrap: anywhere; }
+.reply-context:hover { color: var(--brand); }
+.reply-target { margin: 0 0 10px; font-size: 12px; color: var(--text-faint); }
+.reply:focus { outline: 2px solid var(--brand); outline-offset: 4px; }
+@media (max-width: 600px) {
+  .reply-conversation { padding-left: 8px; }
+  .nested-replies .reply { gap: 8px; }
+  .nested-reply-form { padding: 10px; }
+}

@@ -162,3 +162,27 @@ export function withVoteState(item, liked) {
     liked_by_me: Boolean(liked),
   }
 }
+
+// Root replies keep vote ranking; conversations always read oldest to newest.
+export function groupReplyThreads(replies) {
+  const byId = new Map(replies.map(reply => [String(reply.id), reply]))
+  const groups = new Map()
+  for (const reply of replies) {
+    let root = reply
+    const visited = new Set([String(root.id)])
+    while (root.parent_reply_id != null && byId.has(String(root.parent_reply_id))) {
+      const parent = byId.get(String(root.parent_reply_id))
+      if (String(parent.post_id) !== String(reply.post_id) || visited.has(String(parent.id))) break
+      visited.add(String(parent.id))
+      root = parent
+    }
+    const key = String(root.id)
+    if (!groups.has(key)) groups.set(key, { root, children: [] })
+    if (String(reply.id) !== key) groups.get(key).children.push(reply)
+  }
+  return [...groups.values()].sort((a, b) => compareReplies(a.root, b.root)).map(group => ({
+    ...group,
+    children: group.children.sort((a, b) =>
+      new Date(a.created_at) - new Date(b.created_at) || Number(a.id) - Number(b.id)),
+  }))
+}

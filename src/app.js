@@ -5,6 +5,7 @@ import {
   displayName,
   excerptPlain,
   formatRelativeTime,
+  groupReplyThreads,
   initials,
   safeAvatarUrl,
   validateFeedback,
@@ -74,6 +75,7 @@ let searchQuery = ''
 // 回复框和编辑框都是 renderFeed 现搭的，任何一次重绘都会把它们连同里面
 // 没提交的字一起扔掉。草稿存在 DOM 之外，重绘后再填回去。
 const replyDrafts = new Map()
+const collapsedReplyThreads = new Set()
 const editDrafts = new Map()
 const postEditDrafts = new Map()
 
@@ -220,10 +222,11 @@ function makeAvatar(name, avatarUrl, anonymous = false) {
   return wrapper
 }
 
-function makeReply(reply, { highlighted = false } = {}) {
+function makeReply(reply, { highlighted = false, replyMap = new Map() } = {}) {
   const draftKey = String(reply.id)
   const anonymous = Boolean(reply.is_anonymous)
   const item = element('li', highlighted ? 'reply is-insight' : 'reply')
+  item.id = `comment-${reply.id}`
   item.append(makeAvatar(reply.author_name, reply.author_avatar_url, anonymous))
 
   const content = element('div', 'reply-content')
@@ -241,23 +244,52 @@ function makeReply(reply, { highlighted = false } = {}) {
     onEdit: () => enterEdit(),
   })
 
-  content.append(header, body, toolbar)
+  content.append(header)
+  const parent = replyMap.get(String(reply.parent_reply_id))
+  if (parent) {
+    const context = element('a', 'reply-context', `回复 ${parent.is_anonymous ? '匿名成员' : parent.author_name || 'Google 用户'}：${excerptPlain(parent.body, 42)}`)
+    context.href = `#comment-${parent.id}`
+    context.addEventListener('click', event => {
+      event.preventDefault()
+      const target = document.getElementById(`comment-${parent.id}`)
+      target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      target?.focus({ preventScroll: true })
+    })
+    content.append(context)
+  }
+  item.tabIndex = -1
+  content.append(body, toolbar)
+  const respond = element('button', 'text-button', '回复')
+  respond.type = 'button'
+  respond.setAttribute('aria-label', `回复这条评论：${excerptPlain(reply.body, 25)}`)
+  toolbar.append(respond)
+  const responseKey = `${reply.post_id}:${reply.id}`
+  function openResponse(focus = true) {
+    let form = content.querySelector(':scope > .nested-reply-form')
+    if (!form) {
+      form = makeReplyForm(reply.post_id, reply)
+      content.append(form)
+    }
+    if (focus) form.querySelector('textarea').focus()
+  }
+  respond.addEventListener('click', () => openResponse())
+  if (replyDrafts.has(responseKey)) openResponse(false)
   item.append(content)
 
   function showView() {
     editDrafts.delete(draftKey)
     body.hidden = false
     toolbar.hidden = false
-    content.querySelector('.reply-form')?.remove()
+    content.querySelector(':scope > .reply-edit-form')?.remove()
   }
 
   function enterEdit({ focus = true } = {}) {
-    if (content.querySelector('.reply-form')) return
+    if (content.querySelector(':scope > .reply-edit-form')) return
 
     body.hidden = true
     toolbar.hidden = true
 
-    const form = element('form', 'reply-form')
+    const form = element('form', 'reply-form reply-edit-form')
     const label = element('label', 'sr-only', '编辑回复')
     const textarea = document.createElement('textarea')
     const actions = element('div', 'reply-actions')
@@ -331,7 +363,7 @@ function makeReplyToolbar(reply, { onEdit }) {
   remove.addEventListener('click', async () => {
     const confirmed = await confirmAction({
       title: '删除这条回复？',
-      body: '赞也会一起去掉，删掉之后没法恢复。',
+      body: '这条评论和它的赞会删除，其他人的回复会保留。',
       confirmLabel: '删除',
     })
     if (!confirmed) return
@@ -340,6 +372,7 @@ function makeReplyToolbar(reply, { onEdit }) {
     try {
       await backend.deleteReply(reply.id)
       editDrafts.delete(String(reply.id))
+      replyDrafts.delete(`${reply.post_id}:${reply.id}`)
       await loadPosts({ preserveOpenPost: String(reply.post_id) })
       showToast('回复已删除。')
     } catch (error) {
@@ -461,10 +494,10 @@ function makeReplyVoteButton(reply) {
   })
 }
 
-function makeReplyForm(postId) {
-  const draftKey = String(postId)
+function makeReplyForm(postId, target = null) {
+  const draftKey = target ? `${postId}:${target.id}` : String(postId)
   const draft = replyDrafts.get(draftKey)
-  const form = element('form', 'reply-form')
+  const form = element('form', target ? 'reply-form nested-reply-form' : 'reply-form')
   const label = element('label', 'sr-only', '写下你的回复')
   const textarea = document.createElement('textarea')
   const actions = element('div', 'reply-actions')
@@ -475,8 +508,8 @@ function makeReplyForm(postId) {
   const identity = element('span', 'reply-identity')
   const button = element('button', 'secondary-button', '发布回复')
 
-  label.htmlFor = `reply-${postId}`
-  textarea.id = `reply-${postId}`
+  label.htmlFor = `reply-${draftKey}`
+  textarea.id = `reply-${draftKey}`
   textarea.name = 'reply'
   textarea.rows = 3
   textarea.maxLength = LIMITS.replyMax
@@ -486,9 +519,9 @@ function makeReplyForm(postId) {
 
   anonymousInput.type = 'checkbox'
   anonymousInput.name = 'anonymous'
-  anonymousInput.checked = Boolean(draft?.anonymous)
+  anonymousInput.checked = draft?.anonymous ?? Boolean(target?.is_anonymous)
   anonymousLabel.append(anonymousInput, document.createTextNode('匿名回复'))
-  identity.id = `reply-identity-${postId}`
+  identity.id = `reply-identity-${draftKey}`
   identity.textContent = replyIdentityText(anonymousInput.checked)
   anonymousInput.setAttribute('aria-describedby', identity.id)
 
@@ -511,6 +544,16 @@ function makeReplyForm(postId) {
 
   meta.append(anonymousLabel, identity)
   actions.append(meta, count, button)
+  if (target) {
+    form.append(element('p', 'reply-target', `回复：${excerptPlain(target.body, 45)}`))
+    const cancel = element('button', 'text-button', '取消')
+    cancel.type = 'button'
+    cancel.addEventListener('click', () => {
+      replyDrafts.delete(draftKey)
+      form.remove()
+    })
+    actions.insertBefore(cancel, button)
+  }
   form.append(label, textarea, actions)
 
   form.addEventListener('submit', async (event) => {
@@ -524,7 +567,7 @@ function makeReplyForm(postId) {
 
     setButtonBusy(button, true, '发布中…')
     try {
-      await backend.createReply(postId, result.value)
+      await backend.createReply(postId, { ...result.value, parent_reply_id: target?.id ?? null })
       textarea.value = ''
       replyDrafts.delete(draftKey)
       await loadPosts({ preserveOpenPost: String(postId) })
@@ -595,7 +638,9 @@ function setupCollapsibleBody(body, attempts = 0) {
 
 function forgetPostDrafts(post) {
   postEditDrafts.delete(String(post.id))
-  replyDrafts.delete(String(post.id))
+  for (const key of replyDrafts.keys()) {
+    if (key === String(post.id) || key.startsWith(`${post.id}:`)) replyDrafts.delete(key)
+  }
   for (const reply of post.replies) editDrafts.delete(String(reply.id))
 }
 
@@ -622,7 +667,8 @@ function makePost(post, shouldOpen = false) {
 
   // 有草稿却折叠起来，等于把它藏没了
   const hasDraft =
-    replyDrafts.has(draftKey) || post.replies.some((reply) => editDrafts.has(String(reply.id)))
+    replyDrafts.has(draftKey) || post.replies.some((reply) =>
+      editDrafts.has(String(reply.id)) || replyDrafts.has(`${post.id}:${reply.id}`))
 
   const open = shouldOpen || hasDraft
   const toggle = element('button', 'thread-toggle')
@@ -647,9 +693,26 @@ function makePost(post, shouldOpen = false) {
 
   const replies = element('ol', 'reply-list')
   if (post.replies.length) {
-    post.replies.forEach((reply, index) => {
-      const highlighted = index === 0 && Number(reply.upvote_count) > 0
-      replies.append(makeReply(reply, { highlighted }))
+    const replyMap = new Map(post.replies.map(reply => [String(reply.id), reply]))
+    groupReplyThreads(post.replies).forEach(({ root, children }, index) => {
+      const highlighted = index === 0 && Number(root.upvote_count) > 0
+      const item = makeReply(root, { highlighted, replyMap })
+      if (children.length) {
+        const conversation = element('details', 'reply-conversation')
+        const key = String(root.id)
+        conversation.open = !collapsedReplyThreads.has(key) || children.some(reply =>
+          replyDrafts.has(`${post.id}:${reply.id}`) || editDrafts.has(String(reply.id)))
+        const summary = element('summary', 'reply-conversation-toggle', `${children.length} 条跟帖`)
+        const nested = element('ol', 'nested-replies')
+        children.forEach(reply => nested.append(makeReply(reply, { replyMap })))
+        conversation.append(summary, nested)
+        conversation.addEventListener('toggle', () => {
+          if (conversation.open) collapsedReplyThreads.delete(key)
+          else collapsedReplyThreads.add(key)
+        })
+        item.querySelector('.reply-content').append(conversation)
+      }
+      replies.append(item)
     })
   } else {
     replies.append(element('li', 'empty-replies', '还没有人回。你的判断可能就是楼主最需要的。'))
