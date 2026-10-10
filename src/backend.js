@@ -187,6 +187,25 @@ export function createBackend() {
       if (error) throw error
     },
 
+    async memberAccess() {
+      const { data, error } = await supabase.rpc('member_access')
+      if (error) throw error
+      return data || { is_member: false, is_admin: false, is_disabled: false }
+    },
+    async adminMembers() {
+      const { data, error } = await supabase.rpc('admin_members')
+      if (error) throw error
+      return data
+    },
+    async adminSetDisabled(userId, disabled) {
+      const { error } = await supabase.rpc('admin_set_disabled', { p_user_id: userId, p_disabled: disabled })
+      if (error) throw error
+    },
+    async adminDeleteContent(id, kind) {
+      const { error } = await supabase.rpc('admin_delete_content', { p_id: id, p_kind: kind })
+      if (error) throw error
+    },
+
     async isMember(userId) {
       const { data, error } = await supabase
         .from('members')
@@ -373,6 +392,10 @@ function createDemoBackend() {
 
     // Membership persists across sign-out/sign-in, same as a real
     // `members` row would for a returning Google account.
+    async memberAccess() {
+      return { is_member: window.localStorage.getItem(DEMO_MEMBER_KEY) === '1', is_admin: false, is_disabled: false }
+    },
+
     async isMember() {
       return window.localStorage.getItem(DEMO_MEMBER_KEY) === '1'
     },

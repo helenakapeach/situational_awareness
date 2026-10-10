@@ -1361,3 +1361,8 @@ textarea::placeholder {
   .nested-replies .reply { gap: 8px; }
   .nested-reply-form { padding: 10px; }
 }
+
+.admin-member { display:flex; gap:1rem; align-items:center; flex-wrap:wrap; padding:1rem 0; border-bottom:1px solid var(--border); }
+.admin-member > div { flex:1; min-width:180px; overflow-wrap:anywhere; }
+.admin-member p { margin:.25rem 0; font-size:.875rem; }
+#admin-tools { margin:1.5rem 0; }
