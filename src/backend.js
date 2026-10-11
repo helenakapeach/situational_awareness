@@ -1,10 +1,112 @@
 import { createClient } from '@supabase/supabase-js'
 import { LIMITS, normalizeInviteCode, sortReplies, withVoteState } from './lib.js'
 
-const DEMO_STORAGE_KEY = 'situational-awareness-demo-v6'
+const DEMO_STORAGE_KEY = 'situational-awareness-demo-v8'
 const DEMO_SESSION_KEY = 'situational-awareness-demo-session'
 const DEMO_MEMBER_KEY = 'situational-awareness-demo-member'
 const DEMO_INVITE_CODE = 'DEMO2026'
+const DEMO_PROFILE_KEY = 'situational-awareness-demo-profile'
+
+const DEMO_COHORTS = [
+  { id: 1, name: '创业' },
+  { id: 2, name: '职业组进阶班' },
+  { id: 3, name: '职业组成长版' },
+]
+
+function defaultDemoProfile() {
+  return {
+    public_id: 'demo-user',
+    display_name: 'MVP 测试用户',
+    tagline: null,
+    bio: null,
+    avatar_url: '',
+    linkedin_url: null,
+    linkedin_public: false,
+    contact_email: null,
+    email_public: false,
+    wechat_id: null,
+    wechat_public: false,
+    role: null,
+    cohort_id: null,
+    cohort_name: null,
+    graduation_year: null,
+    role_verified: false,
+  }
+}
+
+const DEMO_DIRECTORY = {
+  'seed-c': {
+    public_id: 'seed-c',
+    display_name: '林然',
+    tagline: '帮人把「要不要接」拆成可以选择的条件',
+    bio: '带过几个第一次独立扛项目的人。更关心你有没有把选择权交回去，而不是你接不接。',
+    role: 'mentor',
+    role_verified: true,
+    linkedin_url: 'https://www.linkedin.com/in/example-linran',
+    linkedin_public: true,
+  },
+  'seed-d': {
+    public_id: 'seed-d',
+    display_name: '周宁',
+    tagline: '还在学怎么把反馈说清楚',
+    bio: '学员。遇到拿不准的反馈，会先私下说，再看对方要不要把它变成自己的下一版。',
+    role: 'student',
+    cohort_name: '职业组进阶班',
+    graduation_year: 2025,
+    wechat_id: 'ZhouNing2025',
+    wechat_public: true,
+  },
+  'seed-w': {
+    public_id: 'seed-w',
+    display_name: 'Wendy Zhang',
+    tagline: '习惯把不同意见说成一个还没解释清楚的现象',
+    bio: '其他成员。没有在带人，但愿意把一次难谈的对话拆开。',
+    role: 'other',
+    // 私密邮箱：卡片上不应该出现
+    contact_email: 'wendy@example.com',
+    email_public: false,
+  },
+}
+
+function publicProfileCard(profile, isSelf) {
+  const card = {
+    public_id: profile.public_id,
+    display_name: profile.display_name,
+    tagline: profile.tagline,
+    bio: profile.bio,
+    avatar_url: profile.avatar_url,
+    role: profile.role,
+    cohort_name: profile.cohort_name,
+    graduation_year: profile.graduation_year,
+    role_verified: Boolean(profile.role_verified),
+    is_self: isSelf,
+  }
+  if (profile.linkedin_public && profile.linkedin_url) card.linkedin_url = profile.linkedin_url
+  if (profile.email_public && profile.contact_email) card.contact_email = profile.contact_email
+  if (profile.wechat_public && profile.wechat_id) card.wechat_id = profile.wechat_id
+  return card
+}
+
+function contentIdentity(profile) {
+  if (!profile) {
+    return {
+      author_name: '匿名成员',
+      author_avatar_url: '',
+      author_public_id: null,
+      author_role: null,
+      author_cohort_name: null,
+      author_role_verified: false,
+    }
+  }
+  return {
+    author_name: profile.display_name,
+    author_avatar_url: profile.avatar_url || '',
+    author_public_id: profile.public_id,
+    author_role: profile.role,
+    author_cohort_name: profile.cohort_name,
+    author_role_verified: Boolean(profile.role_verified),
+  }
+}
 
 const demoUser = {
   id: 'demo-user',
@@ -57,6 +159,10 @@ function initialDemoData() {
         author_id: 'demo-user',
         author_name: 'MVP 测试用户',
         author_avatar_url: '',
+        author_public_id: 'demo-user',
+        author_role: null,
+        author_cohort_name: null,
+        author_role_verified: false,
         is_anonymous: false,
         body: '我先记下自己的判断：接之前把成功条件和资源缺口写成一页，让老板选，而不是口头答应。',
         created_at: hoursAgo(0.5),
@@ -68,6 +174,10 @@ function initialDemoData() {
         author_id: 'seed-c',
         author_name: '林然',
         author_avatar_url: '',
+        author_public_id: 'seed-c',
+        author_role: 'mentor',
+        author_cohort_name: null,
+        author_role_verified: true,
         is_anonymous: false,
         body: '我会先把 **接项目** 和 **接受当前资源条件** 拆开。可以接，但先写成一页请老板选择取舍：\n\n1. 成功条件是什么\n2. 缺哪些人和时间\n3. 做不到时怎么收场\n\n口头答应最容易变成默认你已经接下全部条件。把选择权交回去，既保住机会，也不用一个人扛缺口。如果这一页他不愿意签，那其实已经回答了「该不该接」。',
         created_at: hoursAgo(1),
@@ -79,6 +189,10 @@ function initialDemoData() {
         author_id: 'seed-d',
         author_name: '周宁',
         author_avatar_url: '',
+        author_public_id: 'seed-d',
+        author_role: 'student',
+        author_cohort_name: '职业组进阶班',
+        author_role_verified: false,
         is_anonymous: false,
         body: '如果对方在意面子，可以把数据框成“我们一起还没解释清楚的现象”，让他有空间把方案改成自己的下一版，而不是被当众纠正。\n\n先肯定他已经投入的部分，再把数据当成共同要解释的信号，而不是当场判方案死刑。私下给一版「你来主导下一轮」的台阶，比在会上直接推翻更不容易伤关系。',
         created_at: hoursAgo(10),
@@ -90,6 +204,10 @@ function initialDemoData() {
         author_id: 'seed-w',
         author_name: 'Wendy Zhang',
         author_avatar_url: '',
+        author_public_id: 'seed-w',
+        author_role: 'other',
+        author_cohort_name: null,
+        author_role_verified: false,
         is_anonymous: false,
         body: '先从共同目标切入，再把数据当作一个需要一起解释的新信号，而不是结论。比如：“这组结果和我们的假设不太一样，我们一起看看可能漏掉了什么？”',
         created_at: hoursAgo(18),
@@ -162,6 +280,7 @@ export function createBackend() {
 
   return {
     isDemo: false,
+    storageBase: url.replace(/\/$/, ''),
 
     async getSession() {
       const { data, error } = await supabase.auth.getSession()
@@ -205,6 +324,59 @@ export function createBackend() {
       const { error } = await supabase.rpc('admin_delete_content', { p_id: id, p_kind: kind })
       if (error) throw error
     },
+    async adminSetRoleVerified(userId, verified) {
+      const { error } = await supabase.rpc('admin_set_role_verified', {
+        p_user_id: userId,
+        p_verified: verified,
+      })
+      if (error) throw error
+    },
+
+    async getOwnProfile() {
+      const { data, error } = await supabase.rpc('get_own_profile')
+      if (error) throw error
+      return data
+    },
+
+    async getProfile(publicId) {
+      const { data, error } = await supabase.rpc('get_profile', { p_public_id: publicId })
+      if (error) throw error
+      return data
+    },
+
+    async listCohorts() {
+      const { data, error } = await supabase
+        .from('cohorts')
+        .select('id,name')
+        .order('sort_order', { ascending: true })
+      if (error) throw error
+      return data || []
+    },
+
+    async updateOwnProfile(profile) {
+      const { data, error } = await supabase.rpc('update_own_profile', { p_profile: profile })
+      if (error) throw error
+      return data
+    },
+
+    async uploadAvatar(blob) {
+      const reserved = await supabase.rpc('reserve_avatar_upload')
+      if (reserved.error) throw reserved.error
+      const uploaded = await supabase.storage.from('avatars').upload(reserved.data, blob, {
+        contentType: 'image/webp',
+        upsert: false,
+      })
+      if (uploaded.error) throw uploaded.error
+      const confirmed = await supabase.rpc('confirm_avatar_upload')
+      if (confirmed.error) throw confirmed.error
+      return confirmed.data
+    },
+
+    async clearAvatar() {
+      const { data, error } = await supabase.rpc('clear_avatar')
+      if (error) throw error
+      return data
+    },
 
     async isMember(userId) {
       const { data, error } = await supabase
@@ -230,7 +402,7 @@ export function createBackend() {
     async listPosts({ before = null } = {}) {
       let query = supabase
         .from('posts')
-        .select('id,author_name,author_avatar_url,is_anonymous,title,body,created_at,updated_at,upvote_count,post_votes(post_id)')
+        .select('id,author_name,author_avatar_url,author_public_id,author_role,author_cohort_name,author_role_verified,is_anonymous,title,body,created_at,updated_at,upvote_count,post_votes(post_id)')
         .order('created_at', { ascending: false })
         .limit(LIMITS.pageSize)
 
@@ -243,7 +415,7 @@ export function createBackend() {
 
       const { data: replies, error: repliesError } = await supabase
         .from('replies')
-        .select('id,post_id,parent_reply_id,author_name,author_avatar_url,is_anonymous,body,created_at,updated_at,upvote_count,reply_votes(reply_id)')
+        .select('id,post_id,parent_reply_id,author_name,author_avatar_url,author_public_id,author_role,author_cohort_name,author_role_verified,is_anonymous,body,created_at,updated_at,upvote_count,reply_votes(reply_id)')
         .in('post_id', posts.map((post) => post.id))
 
       if (repliesError) throw repliesError
@@ -368,8 +540,32 @@ function createDemoBackend() {
     for (const listener of listeners) listener(session)
   }
 
+  function readProfile() {
+    const stored = window.localStorage.getItem(DEMO_PROFILE_KEY)
+    if (!stored) return defaultDemoProfile()
+    try {
+      return { ...defaultDemoProfile(), ...JSON.parse(stored) }
+    } catch {
+      return defaultDemoProfile()
+    }
+  }
+
+  function saveProfile(profile) {
+    const cohort = DEMO_COHORTS.find((item) => item.id === profile.cohort_id)
+    const next = { ...profile, cohort_name: cohort?.name ?? null }
+    window.localStorage.setItem(DEMO_PROFILE_KEY, JSON.stringify(next))
+    const data = readData()
+    const identity = contentIdentity(next)
+    for (const row of [...data.posts, ...data.replies]) {
+      if (row.author_id === demoUser.id && !row.is_anonymous) Object.assign(row, identity)
+    }
+    writeData(data)
+    return { ...next, is_self: true }
+  }
+
   return {
     isDemo: true,
+    storageBase: '',
 
     async getSession() {
       return currentSession()
@@ -406,6 +602,44 @@ function createDemoBackend() {
       return true
     },
 
+    async getOwnProfile() {
+      return { ...readProfile(), is_self: true }
+    },
+
+    async getProfile(publicId) {
+      if (publicId === 'demo-user') return publicProfileCard(await this.getOwnProfile(), true)
+      const profile = DEMO_DIRECTORY[publicId]
+      return profile ? publicProfileCard(profile, false) : null
+    },
+
+    async listCohorts() {
+      return DEMO_COHORTS.map((cohort) => ({ ...cohort }))
+    },
+
+    async updateOwnProfile(profile) {
+      const current = readProfile()
+      const sameRole = current.role === profile.role && current.cohort_id === profile.cohort_id
+      return saveProfile({
+        ...current,
+        ...profile,
+        role_verified: sameRole && current.role_verified,
+      })
+    },
+
+    async uploadAvatar(blob) {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result)
+        reader.onerror = () => reject(new Error('头像读取失败。'))
+        reader.readAsDataURL(blob)
+      })
+      return saveProfile({ ...readProfile(), avatar_url: dataUrl })
+    },
+
+    async clearAvatar() {
+      return saveProfile({ ...readProfile(), avatar_url: '' })
+    },
+
     async listPosts({ before = null } = {}) {
       const data = readData()
       const likedReplyIds = new Set(
@@ -433,8 +667,7 @@ function createDemoBackend() {
             ...withVoteState(
               {
                 ...rest,
-                author_name: isAnonymous ? '匿名成员' : post.author_name || 'Google 用户',
-                author_avatar_url: isAnonymous ? '' : post.author_avatar_url || '',
+                ...(isAnonymous && contentIdentity(null)),
                 is_anonymous: isAnonymous,
                 is_mine: author_id === demoUser.id,
               },
@@ -446,7 +679,11 @@ function createDemoBackend() {
                 .map((reply) => {
                   const { author_id: replyAuthorId, ...replyRest } = reply
                   return withVoteState(
-                    { ...replyRest, is_mine: replyAuthorId === demoUser.id },
+                    {
+                      ...replyRest,
+                      ...(reply.is_anonymous && contentIdentity(null)),
+                      is_mine: replyAuthorId === demoUser.id,
+                    },
                     likedReplyIds.has(Number(reply.id)),
                   )
                 }),
@@ -462,8 +699,7 @@ function createDemoBackend() {
         id: data.nextPostId++,
         ...post,
         author_id: demoUser.id,
-        author_name: isAnonymous ? '匿名成员' : demoUser.user_metadata.full_name,
-        author_avatar_url: '',
+        ...contentIdentity(isAnonymous ? null : readProfile()),
         is_anonymous: isAnonymous,
         upvote_count: 0,
         created_at: new Date().toISOString(),
@@ -513,8 +749,7 @@ function createDemoBackend() {
         post_id: postId,
         parent_reply_id: parent?.id ?? null,
         author_id: demoUser.id,
-        author_name: isAnonymous ? '匿名成员' : demoUser.user_metadata.full_name,
-        author_avatar_url: '',
+        ...contentIdentity(isAnonymous ? null : readProfile()),
         is_anonymous: isAnonymous,
         body: reply.body,
         upvote_count: 0,

@@ -301,10 +301,7 @@
             <p class="module-tagline">我</p>
             <p class="trust-line">登录身份：<span id="account-name" class="account-name"></span></p>
           </header>
-          <div class="panel-placeholder">
-            <strong>主页还没做。</strong>
-            <p>以后这里会有公司、职业、届别，以及微信 / 邮箱 / LinkedIn 各自独立的可见性开关。</p>
-          </div>
+          <div id="profile-panel"></div>
           <section id="admin-tools" hidden>
             <h2>管理员</h2>
             <p>可直接删除讨论和回复。停用账号不会删除其已有内容。</p>
@@ -319,6 +316,14 @@
     </div>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <dialog id="profile-dialog" class="modal-dialog" aria-labelledby="profile-dialog-title">
+      <h2 id="profile-dialog-title" class="sr-only">主页</h2>
+      <button id="profile-dialog-close" class="icon-button dialog-close" type="button" aria-label="关闭">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+      </button>
+      <div id="profile-card" tabindex="-1" autofocus></div>
+    </dialog>
 
     <dialog id="feedback-dialog" class="modal-dialog" aria-labelledby="feedback-title">
       <form id="feedback-form">
