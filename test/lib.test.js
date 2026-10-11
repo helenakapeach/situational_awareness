@@ -2,17 +2,21 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  displayAvatarUrl,
   displayName,
   excerptPlain,
   formatRelativeTime,
   groupReplyThreads,
   initials,
+  isUploadedAvatar,
   normalizeInviteCode,
+  roleLabel,
   safeAvatarUrl,
   sortReplies,
   validateFeedback,
   validateInviteCode,
   validatePost,
+  validateProfile,
   validateReply,
   withVoteState,
 } from '../src/lib.js'
@@ -56,6 +60,70 @@ test('relative time handles recent, hourly, daily and invalid dates', () => {
   assert.equal(formatRelativeTime('2026-09-13T08:00:00Z', now), '4 小时前')
   assert.equal(formatRelativeTime('2026-09-11T12:00:00Z', now), '2 天前')
   assert.equal(formatRelativeTime('not-a-date', now), '刚刚')
+})
+
+test('profile validation accepts a complete card and rejects bad contact details', () => {
+  assert.deepEqual(validateProfile({
+    display_name: '  林然  ',
+    tagline: '  把选择权交回去  ',
+    bio: '第一段\n第二段',
+    linkedin_url: 'https://www.linkedin.com/in/example-lin',
+    linkedin_public: true,
+    contact_email: ' Lin@Example.com ',
+    email_public: false,
+    wechat_id: '',
+    wechat_public: true,
+    role: 'student',
+    cohort_id: '2',
+  }), {
+    ok: true,
+    value: {
+      display_name: '林然',
+      tagline: '把选择权交回去',
+      bio: '第一段\n第二段',
+      linkedin_url: 'https://www.linkedin.com/in/example-lin',
+      linkedin_public: true,
+      contact_email: 'lin@example.com',
+      email_public: false,
+      wechat_id: null,
+      wechat_public: false,
+      role: 'student',
+      cohort_id: 2,
+      graduation_year: null,
+    },
+  })
+  assert.equal(validateProfile({ display_name: '好', role: 'student', graduation_year: 2015 }).ok, false)
+  assert.equal(validateProfile({ display_name: '好', role: 'student', graduation_year: 2028 }).ok, false)
+  assert.equal(validateProfile({ display_name: '好', role: 'student', graduation_year: 2016 }).value.graduation_year, 2016)
+  assert.equal(validateProfile({ display_name: '好', role: 'committee', graduation_year: 2016, cohort_id: 1 }).value.graduation_year, null)
+  assert.equal(validateProfile({ display_name: '好', role: 'mentor', graduation_year: 2020 }).value.graduation_year, null)
+  assert.equal(validateProfile({ display_name: '好', role: 'committee', cohort_id: 1 }).value.cohort_id, null)
+  assert.equal(validateProfile({ display_name: '' }).ok, false)
+  assert.equal(validateProfile({ display_name: '好', linkedin_url: 'https://evil.example/in/lin' }).ok, false)
+  assert.equal(validateProfile({ display_name: '好', contact_email: 'not-an-email' }).ok, false)
+  assert.equal(validateProfile({ display_name: '好', wechat_id: '12bad' }).ok, false)
+  assert.equal(validateProfile({ display_name: '好', role: 'staff' }).ok, false)
+  assert.equal(validateProfile({ display_name: '好', role: 'mentor', cohort_id: 4 }).value.cohort_id, null)
+})
+
+test('role labels and avatar urls stay inside the profile rules', () => {
+  assert.equal(roleLabel('committee'), '领航执委会')
+  assert.equal(roleLabel('mentor'), '领航导师')
+  assert.equal(roleLabel('student', ' 2025 春季班 '), '领航学员 · 2025 春季班')
+  assert.equal(roleLabel('other'), '其他成员')
+  assert.equal(roleLabel(null), '')
+  assert.equal(roleLabel('student', ''), '领航学员')
+
+  const path = '11111111-1111-1111-1111-111111111111.webp'
+  assert.equal(isUploadedAvatar(path), true)
+  assert.equal(isUploadedAvatar('https://example.com/a.png'), false)
+  assert.equal(
+    displayAvatarUrl(path, 'https://project.supabase.co'),
+    `https://project.supabase.co/storage/v1/object/public/avatars/${path}`,
+  )
+  assert.equal(displayAvatarUrl(path, ''), null)
+  assert.equal(displayAvatarUrl('../secret.webp', 'https://project.supabase.co'), null)
+  assert.equal(displayAvatarUrl('https://lh3.googleusercontent.com/a/photo'), 'https://lh3.googleusercontent.com/a/photo')
 })
 
 test('avatar URLs only allow http and https', () => {

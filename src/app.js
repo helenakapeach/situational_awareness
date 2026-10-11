@@ -2,16 +2,25 @@ import './styles.css'
 import { createBackend } from './backend.js'
 import {
   LIMITS,
+  displayAvatarUrl,
   displayName,
   excerptPlain,
   formatRelativeTime,
   groupReplyThreads,
   initials,
-  safeAvatarUrl,
+  isUploadedAvatar,
+  GRADUATION_YEAR_MAX,
+  GRADUATION_YEAR_MIN,
+  graduationLabel,
+  ROLES,
+  roleLabel,
   validateFeedback,
   validateInviteCode,
   validatePost,
+  validateProfile,
   validateReply,
+  validContactEmail,
+  validLinkedInUrl,
 } from './lib.js'
 import { renderMarkdown } from './markdown.js'
 
@@ -65,6 +74,9 @@ const THEME_KEY = 'situational-awareness-theme'
 
 let isAdmin = false
 let session = null
+let ownProfile = null
+let cohorts = []
+let profileError = ''
 let loadingPosts = false
 let toastTimer = null
 let searchTimer = null
@@ -201,16 +213,22 @@ function makeMarkdownBody(className, source) {
   return body
 }
 
-function makeAvatar(name, avatarUrl, anonymous = false) {
-  const wrapper = element('div', anonymous ? 'avatar anonymous' : 'avatar')
-  wrapper.setAttribute('aria-hidden', 'true')
+function makeAvatar(name, avatarUrl, anonymous = false, onOpen = null) {
+  const wrapper = element(onOpen ? 'button' : 'div', anonymous ? 'avatar anonymous' : 'avatar')
+  if (onOpen) {
+    wrapper.type = 'button'
+    wrapper.setAttribute('aria-label', `查看${name || '成员'}的主页`)
+    wrapper.addEventListener('click', onOpen)
+  } else {
+    wrapper.setAttribute('aria-hidden', 'true')
+  }
 
   if (anonymous) {
     wrapper.textContent = '?'
     return wrapper
   }
 
-  const safeUrl = safeAvatarUrl(avatarUrl)
+  const safeUrl = displayAvatarUrl(avatarUrl, backend.storageBase)
   if (safeUrl) {
     const image = document.createElement('img')
     image.src = safeUrl
@@ -228,24 +246,33 @@ function makeReply(reply, { highlighted = false, replyMap = new Map() } = {}) {
   const anonymous = Boolean(reply.is_anonymous)
   const item = element('li', highlighted ? 'reply is-insight' : 'reply')
   item.id = `comment-${reply.id}`
-  item.append(makeAvatar(reply.author_name, reply.author_avatar_url, anonymous))
+  item.append(makeAvatar(
+    reply.author_name,
+    reply.author_avatar_url,
+    anonymous,
+    linkableProfile(reply, anonymous),
+  ))
 
   const content = element('div', 'reply-content')
-  const header = element('div', 'reply-header')
-  header.append(
-    element('strong', 'reply-name', anonymous ? '匿名成员' : reply.author_name || 'Google 用户'),
-    element('time', 'reply-time', formatRelativeTime(reply.created_at)),
-  )
-  if (reply.updated_at) {
-    header.append(element('span', 'reply-edited', '已编辑'))
-  }
+  const who = element('div')
+  who.append(makeAuthorName(reply.author_name, reply.author_public_id, anonymous, 'reply-name'))
+  const byline = element('div', 'reply-byline')
+  byline.append(element('time', 'reply-time', formatRelativeTime(reply.created_at)))
+  const replyRole = anonymous ? null : makeRoleTag(reply.author_role, reply.author_cohort_name, reply.author_role_verified)
+  if (replyRole) byline.append(replyRole)
+  if (reply.updated_at) byline.append(element('span', 'reply-edited', '已编辑'))
+  who.append(byline)
 
   const body = makeMarkdownBody('reply-body', reply.body)
+  const respond = element('button', 'text-button', '回复')
+  respond.type = 'button'
+  respond.setAttribute('aria-label', `回复这条评论：${excerptPlain(reply.body, 25)}`)
   const toolbar = makeReplyToolbar(reply, {
     onEdit: () => enterEdit(),
+    respond,
   })
 
-  content.append(header)
+  content.append(who)
   const parent = replyMap.get(String(reply.parent_reply_id))
   if (parent) {
     const context = element('a', 'reply-context', `回复 ${parent.is_anonymous ? '匿名成员' : parent.author_name || 'Google 用户'}：${excerptPlain(parent.body, 42)}`)
@@ -260,10 +287,6 @@ function makeReply(reply, { highlighted = false, replyMap = new Map() } = {}) {
   }
   item.tabIndex = -1
   content.append(body, toolbar)
-  const respond = element('button', 'text-button', '回复')
-  respond.type = 'button'
-  respond.setAttribute('aria-label', `回复这条评论：${excerptPlain(reply.body, 25)}`)
-  toolbar.append(respond)
   const responseKey = `${reply.post_id}:${reply.id}`
   function openResponse(focus = true) {
     let form = content.querySelector(':scope > .nested-reply-form')
@@ -349,9 +372,11 @@ function makeReply(reply, { highlighted = false, replyMap = new Map() } = {}) {
   return item
 }
 
-function makeReplyToolbar(reply, { onEdit }) {
+function makeReplyToolbar(reply, { onEdit, respond }) {
   const toolbar = element('div', 'reply-toolbar')
-  toolbar.append(makeReplyVoteButton(reply))
+  const end = element('div', 'reply-end')
+  toolbar.append(makeReplyVoteButton(reply), end)
+  end.append(respond)
 
   if (!reply.is_mine && !isAdmin) return toolbar
 
@@ -384,20 +409,24 @@ function makeReplyToolbar(reply, { onEdit }) {
   })
   if (reply.is_mine) own.append(edit)
   own.append(remove)
-  toolbar.append(own)
+  end.prepend(own)
   return toolbar
+}
+
+function currentDisplayName() {
+  return ownProfile?.display_name || displayName(session?.user)
 }
 
 function replyIdentityText(anonymous) {
   return anonymous
     ? '将以匿名身份回复'
-    : `将以 ${displayName(session?.user)} 的名义回复`
+    : `将以 ${currentDisplayName()} 的名义回复`
 }
 
 function postIdentityText(anonymous) {
   return anonymous
     ? '将以匿名身份发布'
-    : `将以 ${displayName(session?.user)} 的名义发布`
+    : `将以 ${currentDisplayName()} 的名义发布`
 }
 
 function makeThumbsUpIcon() {
@@ -602,9 +631,13 @@ function namedRepliers(replies, limit = 4) {
 
 function makeInsightPreview(reply) {
   const preview = element('div', 'insight-preview')
-  const who = reply.is_anonymous ? '匿名成员' : reply.author_name || 'Google 用户'
+  const who = reply.is_anonymous ? '匿名成员' : reply.author_name || '成员'
   const byline = element('span', 'insight-preview-who')
-  byline.append(element('span', 'insight-preview-mark', '高赞'), who)
+  byline.append(element('span', 'insight-preview-mark', '高赞'), element('span', '', who))
+  const insightRole = reply.is_anonymous
+    ? null
+    : makeRoleTag(reply.author_role, reply.author_cohort_name, reply.author_role_verified)
+  if (insightRole) byline.append(insightRole)
   preview.append(byline, element('p', 'insight-preview-body', excerptPlain(reply.body, 160)))
   return preview
 }
@@ -653,12 +686,19 @@ function makePost(post, shouldOpen = false) {
   const anonymous = Boolean(post.is_anonymous)
 
   const header = element('header', 'post-header')
-  header.append(makeAvatar(post.author_name, post.author_avatar_url, anonymous))
+  header.append(makeAvatar(
+    post.author_name,
+    post.author_avatar_url,
+    anonymous,
+    linkableProfile(post, anonymous),
+  ))
   const meta = element('div', 'post-meta')
   meta.append(
-    element('strong', 'post-author', anonymous ? '匿名成员' : post.author_name || 'Google 用户'),
+    makeAuthorName(post.author_name, post.author_public_id, anonymous, 'post-author'),
     element('time', 'post-time', formatRelativeTime(post.created_at)),
   )
+  const postRole = anonymous ? null : makeRoleTag(post.author_role, post.author_cohort_name, post.author_role_verified)
+  if (postRole) meta.append(postRole)
   if (post.updated_at) {
     meta.append(element('span', 'reply-edited', '已编辑'))
   }
@@ -922,17 +962,19 @@ function renderFeed(previouslyOpen = new Set()) {
   elements.feed.append(empty)
 }
 
-async function loadPosts({ preserveOpenPost } = {}) {
+async function loadPosts({ preserveOpenPost = null, quiet = false } = {}) {
   if (loadingPosts) return
   loadingPosts = true
   const previouslyOpen = openPostIds()
   if (preserveOpenPost) previouslyOpen.add(String(preserveOpenPost))
 
-  elements.feedStatus.hidden = false
-  elements.feedStatus.textContent = '正在加载讨论…'
-  elements.feedStatus.classList.remove('error')
-  elements.refreshButton.classList.add('spinning')
-  elements.refreshButton.disabled = true
+  if (!quiet) {
+    elements.feedStatus.hidden = false
+    elements.feedStatus.textContent = '正在加载讨论…'
+    elements.feedStatus.classList.remove('error')
+    elements.refreshButton.classList.add('spinning')
+    elements.refreshButton.disabled = true
+  }
 
   try {
     const page = await backend.listPosts()
@@ -973,9 +1015,13 @@ async function loadMorePosts() {
 async function renderSession(nextSession) {
   session = nextSession
   if (!session) {
+    ownProfile = null
+    cohorts = []
+    profileError = ''
     elements.accountName.textContent = ''
     elements.feed.replaceChildren()
     elements.feedbackDialog.close()
+    document.querySelector('#profile-dialog').close()
     cachedPosts = []
     hasMorePosts = false
     replyDrafts.clear()
@@ -1002,6 +1048,16 @@ async function renderSession(nextSession) {
   }
 
   elements.accountName.textContent = displayName(session.user)
+  try {
+    ;[ownProfile, cohorts] = await Promise.all([backend.getOwnProfile(), backend.listCohorts()])
+    profileError = ''
+  } catch (error) {
+    ownProfile = null
+    cohorts = []
+    profileError = friendlyError(error)
+  }
+  renderProfilePanel()
+  updatePostIdentity()
   setView('app')
   await loadPosts()
 }
@@ -1249,8 +1305,29 @@ async function loadAdminMembers() {
     for (const member of members) {
       const row = element('div', 'admin-member')
       const identity = element('div')
-      identity.append(element('strong', '', member.name || '成员'), element('p', '', member.email || ''))
+      const roleText = roleLabel(member.role, member.cohort_name) || '未选角色'
+      identity.append(
+        element('strong', '', member.display_name || member.name || '成员'),
+        element('p', '', member.email || ''),
+        element('p', '', member.role_verified ? `${roleText} · 已认证` : roleText),
+      )
       row.append(identity, element('span', '', member.is_admin ? '管理员' : member.is_disabled ? '已停用' : '正常'))
+      if (member.role) {
+        const verify = element('button', 'text-button', member.role_verified ? '取消认证' : '认证角色')
+        verify.type = 'button'
+        verify.addEventListener('click', async () => {
+          setButtonBusy(verify, true, '保存中…')
+          try {
+            await backend.adminSetRoleVerified(member.user_id, !member.role_verified)
+            await loadAdminMembers()
+            showToast(member.role_verified ? '已取消认证。' : '已认证这个角色。')
+          } catch (error) {
+            showToast(friendlyError(error), 'error')
+            setButtonBusy(verify, false)
+          }
+        })
+        row.append(verify)
+      }
       if (!member.is_admin) {
         const button = element('button', 'text-button', member.is_disabled ? '恢复账号' : '停用账号')
         button.type = 'button'
@@ -1270,3 +1347,369 @@ async function loadAdminMembers() {
   } catch (error) { list.textContent = friendlyError(error) }
 }
 document.querySelector('#admin-load-members').addEventListener('click', loadAdminMembers)
+
+function linkableProfile(item, anonymous) {
+  if (anonymous || !item?.author_public_id) return null
+  return () => showProfile(item.author_public_id)
+}
+
+function makeAuthorName(name, publicId, anonymous, className) {
+  const label = anonymous ? '匿名成员' : name || '成员'
+  if (anonymous || !publicId) return element('strong', className, label)
+  const button = element('button', `author-link ${className}`)
+  button.type = 'button'
+  button.textContent = label
+  button.addEventListener('click', () => showProfile(publicId))
+  return button
+}
+
+function makeRoleTag(role, cohortName, verified) {
+  const label = roleLabel(role, cohortName)
+  if (!label) return null
+  const tag = element('span', 'role-tag', label)
+  if (verified) tag.append(element('span', 'verified-mark', '✓ 已认证'))
+  return tag
+}
+
+function fieldLabel(text, control) {
+  const label = element('label', '', text)
+  label.htmlFor = control.id
+  return label
+}
+
+function textInput(id, value, max) {
+  const input = document.createElement('input')
+  input.id = id
+  input.type = 'text'
+  input.maxLength = max
+  input.value = value || ''
+  input.autocomplete = 'off'
+  return input
+}
+
+function selectInput(id, options, value) {
+  const select = document.createElement('select')
+  select.id = id
+  for (const [optionValue, label] of options) select.append(new Option(label, optionValue))
+  select.value = value == null ? '' : String(value)
+  return select
+}
+
+function publicToggle(field, checked) {
+  const label = element('label', 'checkbox-line')
+  const input = document.createElement('input')
+  input.type = 'checkbox'
+  input.id = `${field.id}-public`
+  input.checked = Boolean(checked)
+  label.append(input, element('span', '', '对成员公开'))
+  const sync = () => {
+    input.disabled = !field.value.trim()
+    if (input.disabled) input.checked = false
+  }
+  field.addEventListener('input', sync)
+  sync()
+  return { label, input }
+}
+
+function profileAvatarBlock(profile) {
+  const block = element('div', 'profile-avatar-block')
+  const host = element('div')
+  host.id = 'profile-avatar-host'
+  host.append(makeAvatar(profile.display_name, profile.avatar_url))
+  const file = document.createElement('input')
+  file.type = 'file'
+  file.accept = 'image/jpeg,image/png,image/webp'
+  file.hidden = true
+  file.addEventListener('change', () => {
+    const chosen = file.files?.[0]
+    file.value = ''
+    if (chosen) changeAvatar(chosen)
+  })
+  const pick = element('button', 'text-button', '更换头像')
+  pick.type = 'button'
+  pick.addEventListener('click', () => file.click())
+  const clear = element('button', 'text-button', '改回默认头像')
+  clear.id = 'clear-avatar-button'
+  clear.type = 'button'
+  clear.hidden = !isUploadedAvatar(profile.avatar_url)
+  clear.addEventListener('click', resetAvatar)
+  block.append(host, pick, clear, file)
+  return block
+}
+
+function appendContact(list, label, ...nodes) {
+  const dd = element('dd')
+  dd.append(...nodes)
+  list.append(element('dt', '', label), dd)
+}
+
+function appendPublicContacts(list, profile) {
+  if (profile.linkedin_url && validLinkedInUrl(profile.linkedin_url)) {
+    const link = element('a', '', '打开 LinkedIn')
+    link.href = profile.linkedin_url
+    link.target = '_blank'
+    link.rel = 'noopener noreferrer'
+    appendContact(list, 'LinkedIn', link)
+  }
+  if (profile.contact_email && validContactEmail(profile.contact_email)) {
+    const link = element('a', '', profile.contact_email)
+    link.href = `mailto:${profile.contact_email}`
+    appendContact(list, '邮箱', link)
+  }
+  if (profile.wechat_id) {
+    const copy = element('button', 'text-button', '复制微信号')
+    copy.type = 'button'
+    copy.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(profile.wechat_id)
+        showToast('微信号已复制。')
+      } catch {
+        showToast(`复制失败，微信号是 ${profile.wechat_id}`)
+      }
+    })
+    appendContact(list, '微信', element('span', '', profile.wechat_id), copy)
+  }
+}
+
+function buildProfileSummary(profile) {
+  const card = element('div')
+  const head = element('div', 'profile-head')
+  const identity = element('div')
+  identity.append(element('h2', 'profile-name', profile.display_name || '成员'))
+  if (profile.tagline) identity.append(element('p', 'profile-tagline', profile.tagline))
+  const tag = makeRoleTag(profile.role, profile.cohort_name, profile.role_verified)
+  if (tag) identity.append(tag)
+  const yearText = graduationLabel(profile.graduation_year)
+  if (yearText) identity.append(element('p', 'profile-note', yearText))
+  head.append(makeAvatar(profile.display_name, profile.avatar_url), identity)
+  card.append(head)
+
+  if (profile.bio) card.append(makeMarkdownBody('profile-bio', profile.bio))
+
+  const contacts = element('dl', 'profile-contacts')
+  appendPublicContacts(contacts, profile)
+  card.append(contacts.childElementCount ? contacts : element('p', 'profile-empty', '没有公开联系方式。'))
+  return card
+}
+
+function buildProfileForm() {
+  const profile = ownProfile
+  const form = element('form', 'profile-form')
+
+  const name = textInput('profile-name-input', profile.display_name, LIMITS.displayNameMax)
+  name.required = true
+  const tagline = textInput('profile-tagline-input', profile.tagline, LIMITS.taglineMax)
+  const bio = document.createElement('textarea')
+  bio.id = 'profile-bio-input'
+  bio.rows = 5
+  bio.maxLength = LIMITS.bioMax
+  bio.value = profile.bio || ''
+  const bioCount = element('span', 'character-count')
+  attachCharacterCount(bio, bioCount, LIMITS.bioMax)
+
+  const role = selectInput('profile-role-input', [['', '未选择'], ...Object.entries(ROLES)], profile.role)
+
+  const cohortOptions = cohorts.map((item) => [String(item.id), item.name])
+  if (profile.cohort_id && !cohortOptions.some(([id]) => id === String(profile.cohort_id))) {
+    cohortOptions.push([String(profile.cohort_id), profile.cohort_name || '当前班级'])
+  }
+  const cohort = selectInput(
+    'profile-cohort-input',
+    [['', cohorts.length ? '尚未选择' : '班级还没建好'], ...cohortOptions],
+    profile.cohort_id,
+  )
+  const years = []
+  for (let value = GRADUATION_YEAR_MAX; value >= GRADUATION_YEAR_MIN; value -= 1) years.push([String(value), String(value)])
+  const year = selectInput('profile-year-input', [['', '未选择'], ...years], profile.graduation_year)
+
+  const studentFields = element('div')
+  studentFields.append(fieldLabel('班级', cohort), cohort)
+  if (!cohorts.length) {
+    studentFields.append(element('p', 'profile-note', '班级还没建好，可以先保存角色，之后再选。'))
+  }
+  studentFields.append(fieldLabel('毕业年份', year), year)
+
+  const roleHint = element('p', 'profile-note', '改了角色或班级后，认证会取消。')
+  const syncRole = () => {
+    const student = role.value === 'student'
+    studentFields.hidden = !student
+    const changed = role.value !== (profile.role || '')
+      || (student && cohort.value !== String(profile.cohort_id || ''))
+    roleHint.hidden = !(profile.role_verified && changed)
+  }
+  role.addEventListener('change', syncRole)
+  cohort.addEventListener('change', syncRole)
+  syncRole()
+
+  const linkedin = textInput('profile-linkedin-input', profile.linkedin_url, 160)
+  linkedin.placeholder = 'https://www.linkedin.com/in/…'
+  linkedin.inputMode = 'url'
+  const linkedinPublic = publicToggle(linkedin, profile.linkedin_public)
+
+  const email = textInput('profile-email-input', profile.contact_email, 120)
+  email.placeholder = 'name@example.com'
+  email.inputMode = 'email'
+  const emailPublic = publicToggle(email, profile.email_public)
+
+  const wechat = textInput('profile-wechat-input', profile.wechat_id, 20)
+  wechat.placeholder = '字母开头，6 到 20 位'
+  const wechatPublic = publicToggle(wechat, profile.wechat_public)
+
+  const actions = element('div', 'composer-actions')
+  const save = element('button', 'primary-button', '保存')
+  save.type = 'submit'
+  actions.append(save)
+
+  form.append(
+    profileAvatarBlock(profile),
+    fieldLabel('昵称', name), name,
+    fieldLabel('一句话介绍', tagline), tagline,
+    fieldLabel('自我介绍', bio), bio, bioCount,
+    fieldLabel('角色', role), role, roleHint,
+    studentFields,
+    fieldLabel('LinkedIn', linkedin), linkedin, linkedinPublic.label,
+    fieldLabel('公开邮箱', email), email,
+    element('p', 'profile-note', '这是你想公开的联系邮箱，不会自动填成登录用的 Gmail。'),
+    emailPublic.label,
+    fieldLabel('微信号', wechat), wechat, wechatPublic.label,
+    actions,
+  )
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault()
+    const result = validateProfile({
+      display_name: name.value,
+      tagline: tagline.value,
+      bio: bio.value,
+      linkedin_url: linkedin.value,
+      linkedin_public: linkedinPublic.input.checked,
+      contact_email: email.value,
+      email_public: emailPublic.input.checked,
+      wechat_id: wechat.value,
+      wechat_public: wechatPublic.input.checked,
+      role: role.value,
+      cohort_id: cohort.value,
+      graduation_year: year.value,
+    })
+    if (!result.ok) {
+      showToast(result.message, 'error')
+      return
+    }
+    setButtonBusy(save, true, '保存中…')
+    try {
+      const saved = await backend.updateOwnProfile(result.value)
+      await profileChanged(saved, '资料已保存。实名内容上的名字会一起更新。')
+      renderProfilePanel()
+    } catch (error) {
+      showToast(friendlyError(error), 'error')
+      setButtonBusy(save, false)
+    }
+  })
+  return form
+}
+
+function renderProfilePanel() {
+  const root = document.querySelector('#profile-panel')
+  root.replaceChildren()
+  if (profileError) {
+    const error = element('div', 'panel-placeholder')
+    error.append(element('strong', '', '个人资料暂时加载不了。'), element('p', '', profileError))
+    root.append(error)
+  } else if (ownProfile) {
+    root.append(buildProfileForm())
+  }
+}
+
+async function cropAvatarFile(file) {
+  if (!file || !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+    throw new Error('头像只支持 JPG、PNG 或 WebP。')
+  }
+  if (file.size > 8 * 1024 * 1024) throw new Error('原图不能超过 8MB。')
+
+  const bitmap = await createImageBitmap(file)
+  const side = Math.min(bitmap.width, bitmap.height)
+  const canvas = document.createElement('canvas')
+  canvas.width = 256
+  canvas.height = 256
+  canvas.getContext('2d').drawImage(
+    bitmap,
+    Math.floor((bitmap.width - side) / 2),
+    Math.floor((bitmap.height - side) / 2),
+    side,
+    side,
+    0,
+    0,
+    256,
+    256,
+  )
+  bitmap.close?.()
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', 0.86))
+  if (!blob) throw new Error('这个浏览器没法把图片转成 WebP。')
+  if (blob.size > 1024 * 1024) throw new Error('裁剪后的头像仍然太大，请换一张。')
+  return blob
+}
+
+async function profileChanged(profile, message) {
+  ownProfile = profile
+  updatePostIdentity()
+  await loadPosts({ quiet: true })
+  showToast(message)
+}
+
+// Patch the avatar in place so unsaved text in the form survives the upload.
+async function avatarChanged(profile, message) {
+  document.querySelector('#profile-avatar-host')
+    ?.replaceChildren(makeAvatar(profile.display_name, profile.avatar_url))
+  const clear = document.querySelector('#clear-avatar-button')
+  if (clear) clear.hidden = !isUploadedAvatar(profile.avatar_url)
+  await profileChanged(profile, message)
+}
+
+async function changeAvatar(file) {
+  try {
+    const blob = await cropAvatarFile(file)
+    await avatarChanged(await backend.uploadAvatar(blob), '头像已更新。实名内容会一起换上。')
+  } catch (error) {
+    showToast(friendlyError(error), 'error')
+  }
+}
+
+async function resetAvatar() {
+  try {
+    await avatarChanged(await backend.clearAvatar(), '已改回默认头像。')
+  } catch (error) {
+    showToast(friendlyError(error), 'error')
+  }
+}
+
+async function showProfile(publicId) {
+  const dialog = document.querySelector('#profile-dialog')
+  const card = document.querySelector('#profile-card')
+  card.replaceChildren(element('p', 'profile-empty', '正在加载…'))
+  if (!dialog.open) dialog.showModal()
+  try {
+    const profile = await backend.getProfile(publicId)
+    if (!profile) {
+      card.replaceChildren(element('p', 'profile-empty', '这个主页不存在，或对方已停用。'))
+      return
+    }
+    const summary = buildProfileSummary(profile)
+    if (profile.is_self) {
+      const edit = element('button', 'secondary-button profile-edit', '编辑资料')
+      edit.type = 'button'
+      edit.addEventListener('click', () => {
+        dialog.close()
+        showPanel('me')
+      })
+      summary.append(edit)
+    }
+    card.replaceChildren(summary)
+  } catch (error) {
+    card.replaceChildren(element('p', 'profile-empty', friendlyError(error)))
+  }
+}
+
+document.querySelector('#profile-dialog-close').addEventListener('click', () => {
+  document.querySelector('#profile-dialog').close()
+})
+
