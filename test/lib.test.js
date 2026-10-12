@@ -10,6 +10,9 @@ import {
   initials,
   isUploadedAvatar,
   normalizeInviteCode,
+  normalizePostId,
+  postIdFromSearch,
+  postUrl,
   roleLabel,
   safeAvatarUrl,
   sortReplies,
@@ -138,6 +141,22 @@ test('invite codes are trimmed and upper-cased', () => {
   assert.deepEqual(validateInviteCode('  demo2026  '), { ok: true, value: 'DEMO2026' })
   assert.equal(validateInviteCode('   ').ok, false)
   assert.equal(validateInviteCode('').ok, false)
+})
+
+test('post deep links keep only a valid post id', () => {
+  assert.equal(normalizePostId(' 42 '), '42')
+  assert.equal(normalizePostId('0'), null)
+  assert.equal(normalizePostId('42x'), null)
+  assert.equal(postIdFromSearch('?post=42&code=oauth-code'), '42')
+  assert.equal(postIdFromSearch('?post=bad'), null)
+  assert.equal(
+    postUrl('https://example.com/situational_awareness/?post=7&code=secret#token', 42),
+    'https://example.com/situational_awareness/?post=42',
+  )
+  assert.equal(
+    postUrl('https://example.com/situational_awareness/?post=7#token'),
+    'https://example.com/situational_awareness/',
+  )
 })
 
 test('display names and initials have safe fallbacks', () => {

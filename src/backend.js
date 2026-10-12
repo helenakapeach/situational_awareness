@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { LIMITS, normalizeInviteCode, sortReplies, withVoteState } from './lib.js'
+import { LIMITS, normalizeInviteCode, postIdFromSearch, postUrl, sortReplies, withVoteState } from './lib.js'
 
 const DEMO_STORAGE_KEY = 'situational-awareness-demo-v8'
 const DEMO_SESSION_KEY = 'situational-awareness-demo-session'
@@ -257,7 +257,7 @@ function hasValidConfig(url, key) {
 }
 
 function redirectUrl() {
-  return new URL('.', window.location.href).href.split('?')[0].split('#')[0]
+  return postUrl(window.location.href, postIdFromSearch(window.location.search))
 }
 
 export function createBackend() {
