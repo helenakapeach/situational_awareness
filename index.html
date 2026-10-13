@@ -161,6 +161,30 @@
           <button id="feedback-button" class="text-button" type="button" aria-haspopup="dialog" aria-controls="feedback-dialog">
             反馈
           </button>
+          <div class="notification-menu">
+            <button
+              id="notification-button"
+              class="icon-button notification-button"
+              type="button"
+              aria-label="新回复"
+              aria-haspopup="true"
+              aria-expanded="false"
+              aria-controls="notification-panel"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M6.5 9a5.5 5.5 0 0 1 11 0c0 6 2.5 6 2.5 7.5H4C4 15 6.5 15 6.5 9Z" />
+                <path d="M9.5 20h5" />
+              </svg>
+              <span id="notification-count" class="notification-count" hidden></span>
+            </button>
+            <section id="notification-panel" class="notification-panel" aria-label="新回复通知" hidden>
+              <div class="notification-heading">
+                <strong>新回复</strong>
+                <span id="notification-summary">暂时没有</span>
+              </div>
+              <div id="notification-list" class="notification-list"></div>
+            </section>
+          </div>
           <button class="icon-button panel-link" type="button" data-panel="me" aria-label="我">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <circle cx="12" cy="8" r="3.5" />

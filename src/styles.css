@@ -315,6 +315,111 @@ button:disabled {
   gap: 10px;
 }
 
+.notification-menu {
+  position: relative;
+}
+
+.notification-button {
+  position: relative;
+}
+
+.notification-button svg {
+  fill: none;
+  stroke: currentcolor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.notification-count {
+  position: absolute;
+  top: -4px;
+  right: -5px;
+  display: grid;
+  min-width: 18px;
+  height: 18px;
+  place-items: center;
+  padding: 0 5px;
+  color: var(--text-on-fill);
+  background: var(--risk);
+  border: 2px solid var(--bg);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.notification-panel {
+  position: absolute;
+  top: calc(100% + 12px);
+  right: 0;
+  z-index: 30;
+  width: min(360px, calc(100vw - 24px));
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+.notification-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.notification-heading span {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.notification-list {
+  max-height: min(420px, 60vh);
+  overflow-y: auto;
+}
+
+.notification-item {
+  display: grid;
+  gap: 6px;
+  padding: 14px 18px;
+  color: inherit;
+  border-bottom: 1px solid var(--border);
+  text-decoration: none;
+}
+
+.notification-item:last-child {
+  border-bottom: 0;
+}
+
+.notification-item:hover {
+  background: var(--surface-sunken);
+}
+
+.notification-title {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notification-reply-count {
+  color: var(--brand);
+  font-size: 12px;
+}
+
+.notification-empty {
+  margin: 0;
+  padding: 22px 18px;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .account-name {
   font-weight: 700;
 }
