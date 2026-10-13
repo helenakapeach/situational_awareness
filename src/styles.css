@@ -399,12 +399,10 @@ button:disabled {
 }
 
 .notification-title {
-  overflow: hidden;
   font-size: 14px;
   font-weight: 700;
   line-height: 1.45;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .notification-reply-count {
@@ -1524,6 +1522,22 @@ textarea::placeholder {
 
   .account-menu {
     margin-left: auto;
+  }
+
+  /* 铃铛位于右侧两个按钮之前，若继续相对铃铛右对齐，窄屏会把卡片
+     推出左边界。移动端改为贴着 viewport 两侧展开。 */
+  .notification-panel {
+    position: fixed;
+    top: 68px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+    max-height: calc(100dvh - 80px);
+  }
+
+  .notification-list {
+    max-height: calc(100dvh - 144px);
+    overscroll-behavior: contain;
   }
 }
 
