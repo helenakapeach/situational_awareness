@@ -18,6 +18,7 @@ import {
   graduationLabel,
   ROLES,
   roleLabel,
+  unreadReplyCount,
   validateFeedback,
   validateInviteCode,
   validatePost,
@@ -81,6 +82,8 @@ const elements = {
 
 const THEME_KEY = 'situational-awareness-theme'
 const TARGET_POST_KEY = 'situational-awareness-target-post'
+const UNREAD_BASELINE_KEY = 'situational-awareness-unread-baseline'
+const POST_SEEN_KEY = 'situational-awareness-post-seen'
 const BASE_DOCUMENT_TITLE = document.title
 
 let isAdmin = false
@@ -95,6 +98,55 @@ let searchTimer = null
 let cachedPosts = []
 let hasMorePosts = false
 let searchQuery = ''
+let unreadTrackingUserId = null
+let unreadBaselineAt = Date.now()
+let postSeenAt = {}
+
+function userStorageKey(key) {
+  return `${key}:${session?.user?.id || 'signed-out'}`
+}
+
+function initializeUnreadTracking() {
+  const userId = String(session?.user?.id || '')
+  if (!userId || unreadTrackingUserId === userId) return
+
+  unreadTrackingUserId = userId
+  unreadBaselineAt = Date.now()
+  postSeenAt = {}
+  try {
+    const savedBaseline = Number(window.localStorage.getItem(userStorageKey(UNREAD_BASELINE_KEY)))
+    if (Number.isFinite(savedBaseline) && savedBaseline > 0) {
+      unreadBaselineAt = savedBaseline
+    } else {
+      window.localStorage.setItem(userStorageKey(UNREAD_BASELINE_KEY), String(unreadBaselineAt))
+    }
+
+    const savedSeen = JSON.parse(window.localStorage.getItem(userStorageKey(POST_SEEN_KEY)) || '{}')
+    if (savedSeen && typeof savedSeen === 'object' && !Array.isArray(savedSeen)) {
+      postSeenAt = Object.fromEntries(
+        Object.entries(savedSeen).filter(([, value]) => Number.isFinite(Number(value))),
+      )
+    }
+  } catch {
+    // 无痕模式或损坏的本地数据只会让未读提示从本次访问重新开始。
+  }
+}
+
+function lastSeenAt(postId) {
+  return Number(postSeenAt[String(postId)]) || unreadBaselineAt
+}
+
+function markPostSeen(postId) {
+  const normalized = normalizePostId(postId)
+  if (!normalized) return
+  initializeUnreadTracking()
+  postSeenAt[normalized] = Date.now()
+  try {
+    window.localStorage.setItem(userStorageKey(POST_SEEN_KEY), JSON.stringify(postSeenAt))
+  } catch {
+    // 当前页面仍会正确清掉提示；只是下次访问无法保留。
+  }
+}
 
 function storedTargetPostId() {
   try {
@@ -664,6 +716,7 @@ function makeReplyForm(postId, target = null) {
     setButtonBusy(button, true, '发布中…')
     try {
       await backend.createReply(postId, { ...result.value, parent_reply_id: target?.id ?? null })
+      markPostSeen(postId)
       textarea.value = ''
       replyDrafts.delete(draftKey)
       await loadPosts({ preserveOpenPost: String(postId) })
@@ -776,7 +829,10 @@ function makePost(post, shouldOpen = false, { detail = false } = {}) {
   } else {
     const titleLink = element('a', 'post-title-link', post.title)
     titleLink.href = postUrl(window.location.href, post.id)
-    titleLink.addEventListener('click', () => rememberTargetPost(post.id))
+    titleLink.addEventListener('click', () => {
+      markPostSeen(post.id)
+      rememberTargetPost(post.id)
+    })
     title.append(titleLink)
   }
   heading.append(title, makePostVoteButton(post))
@@ -807,6 +863,12 @@ function makePost(post, shouldOpen = false, { detail = false } = {}) {
       post.replies.length ? `${post.replies.length} 条回复` : '还没有回复',
     ),
   )
+  if (open) markPostSeen(post.id)
+  const newReplyCount = unreadReplyCount(post, lastSeenAt(post.id))
+  const unreadBadge = newReplyCount
+    ? element('span', 'new-replies-badge', `${newReplyCount} 条新回复`)
+    : null
+  if (unreadBadge) toggle.append(unreadBadge)
 
   const replies = element('ol', 'reply-list')
   if (post.replies.length) {
@@ -845,6 +907,10 @@ function makePost(post, shouldOpen = false, { detail = false } = {}) {
     const isOpen = toggle.getAttribute('aria-expanded') === 'true'
     toggle.setAttribute('aria-expanded', String(!isOpen))
     panel.hidden = isOpen
+    if (!isOpen) {
+      markPostSeen(post.id)
+      unreadBadge?.remove()
+    }
   })
 
   const share = element('button', 'text-button post-share', '复制链接')
@@ -1021,6 +1087,7 @@ function renderFeed(previouslyOpen = new Set()) {
   document.title = detailPost ? `${detailPost.title} · 知局` : BASE_DOCUMENT_TITLE
 
   if (requestedPost && detailPost) {
+    markPostSeen(detailPost.id)
     const detailNav = element('nav', 'post-detail-nav')
     const back = element('a', 'text-button post-detail-back', '← 返回讨论广场')
     back.href = postUrl(window.location.href)
@@ -1196,6 +1263,8 @@ async function renderSession(nextSession) {
     setView('invite')
     return
   }
+
+  initializeUnreadTracking()
 
   elements.accountName.textContent = displayName(session.user)
   try {
