@@ -835,20 +835,16 @@ function makePost(post, shouldOpen = false) {
     else if (!isOpen) setTargetPostUrl(post.id)
   })
 
-  const share = element('button', 'text-button post-share', '分享')
+  const share = element('button', 'text-button post-share', '复制链接')
   share.type = 'button'
-  share.setAttribute('aria-label', `分享讨论：${post.title}`)
+  share.setAttribute('aria-label', `复制讨论链接：${post.title}`)
   share.addEventListener('click', async () => {
     const url = postUrl(window.location.href, post.id)
     try {
-      if (navigator.share) {
-        await navigator.share({ title: post.title, text: post.title, url })
-      } else {
-        await navigator.clipboard.writeText(url)
-        showToast('帖子链接已复制。')
-      }
-    } catch (error) {
-      if (error?.name !== 'AbortError') showToast('分享失败，请从浏览器地址栏复制链接。', 'error')
+      await navigator.clipboard.writeText(url)
+      showToast('帖子链接已复制，请粘贴到微信。')
+    } catch {
+      showToast('复制失败，请从浏览器地址栏复制完整链接。', 'error')
     }
   })
 
