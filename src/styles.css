@@ -387,7 +387,7 @@ button:disabled {
   background: var(--surface-sunken);
 }
 
-/* 当前所在模块：tab 和右上角的私信 / 我共用一套选中态 */
+/* 当前所在模块：tab 和右上角的个人页共用一套选中态 */
 .tab[aria-current='page'],
 .icon-button[aria-current='page'] {
   color: var(--brand);
@@ -1067,6 +1067,15 @@ textarea::placeholder {
 
 .thread-toggle[aria-expanded='true']::after {
   content: "−";
+}
+
+.new-replies-badge {
+  padding: 3px 7px;
+  color: var(--brand);
+  background: var(--brand-tint);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .post-card:has(.thread-toggle[aria-expanded='true']) .insight-preview {

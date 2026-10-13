@@ -17,6 +17,7 @@ import {
   roleLabel,
   safeAvatarUrl,
   sortReplies,
+  unreadReplyCount,
   validateFeedback,
   validateInviteCode,
   validatePost,
@@ -166,6 +167,20 @@ test('copied post links put the title above the URL', () => {
     '在亚麻呆到第三年 每周哭三次\nhttps://example.com/?post=42',
   )
   assert.equal(postShareText('', 'https://example.com/'), 'https://example.com/')
+})
+
+test('unread replies only count other people after a participated post was seen', () => {
+  const lastSeen = '2026-10-13T12:00:00Z'
+  const replies = [
+    { id: 1, is_mine: true, created_at: '2026-10-13T11:00:00Z' },
+    { id: 2, is_mine: false, created_at: '2026-10-13T11:30:00Z' },
+    { id: 3, is_mine: false, created_at: '2026-10-13T12:30:00Z' },
+    { id: 4, is_mine: true, created_at: '2026-10-13T13:00:00Z' },
+  ]
+  assert.equal(unreadReplyCount({ is_mine: false, replies }, lastSeen), 1)
+  assert.equal(unreadReplyCount({ is_mine: true, replies: replies.slice(1, 3) }, lastSeen), 1)
+  assert.equal(unreadReplyCount({ is_mine: false, replies: replies.slice(1, 3) }, lastSeen), 0)
+  assert.equal(unreadReplyCount({ is_mine: true, replies }, 'not-a-date'), 0)
 })
 
 test('display names and initials have safe fallbacks', () => {

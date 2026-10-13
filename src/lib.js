@@ -316,6 +316,20 @@ export function withVoteState(item, liked) {
   }
 }
 
+export function unreadReplyCount(post, lastSeenAt) {
+  const replies = Array.isArray(post?.replies) ? post.replies : []
+  const participated = Boolean(post?.is_mine) || replies.some((reply) => reply?.is_mine)
+  const cutoff = typeof lastSeenAt === 'number'
+    ? lastSeenAt
+    : new Date(lastSeenAt).getTime()
+  if (!participated || !Number.isFinite(cutoff)) return 0
+
+  return replies.filter((reply) => {
+    const createdAt = new Date(reply?.created_at).getTime()
+    return !reply?.is_mine && Number.isFinite(createdAt) && createdAt > cutoff
+  }).length
+}
+
 // Root replies keep vote ranking; conversations always read oldest to newest.
 export function groupReplyThreads(replies) {
   const byId = new Map(replies.map(reply => [String(reply.id), reply]))
