@@ -117,6 +117,23 @@ a:focus-visible {
   cursor: pointer;
 }
 
+.browser-notice {
+  margin: 22px 0 14px;
+  padding: 14px 16px;
+  color: var(--text);
+  background: var(--brand-tint);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 14px;
+  line-height: 1.65;
+  text-align: left;
+}
+
+.browser-notice p {
+  margin: 6px 0 12px;
+  color: var(--text-soft);
+}
+
 .login-card {
   width: min(100%, 620px);
   padding: clamp(30px, 7vw, 64px);
@@ -993,9 +1010,17 @@ textarea::placeholder {
 }
 
 .post-engage {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
   margin-top: 20px;
   padding-top: 13px;
   border-top: 1px solid var(--border-soft);
+}
+
+.post-share {
+  flex: none;
 }
 
 .thread-toggle {

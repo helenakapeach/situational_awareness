@@ -9,6 +9,9 @@ import {
   groupReplyThreads,
   initials,
   isUploadedAvatar,
+  normalizePostId,
+  postIdFromSearch,
+  postUrl,
   GRADUATION_YEAR_MAX,
   GRADUATION_YEAR_MIN,
   graduationLabel,
@@ -51,6 +54,7 @@ const elements = {
   login: document.querySelector('#signed-out-view'),
   loginButton: document.querySelector('#login-button'),
   copyLoginLink: document.querySelector('#copy-login-link'),
+  copyBrowserLink: document.querySelector('#copy-browser-link'),
   logoutButton: document.querySelector('#logout-button'),
   panelLinks: document.querySelectorAll('.panel-link'),
   panels: document.querySelectorAll('.panel'),
@@ -68,9 +72,11 @@ const elements = {
   searchInput: document.querySelector('#search-input'),
   themeToggles: document.querySelectorAll('.theme-toggle'),
   toast: document.querySelector('#toast'),
+  wechatBrowserNotice: document.querySelector('#wechat-browser-notice'),
 }
 
 const THEME_KEY = 'situational-awareness-theme'
+const TARGET_POST_KEY = 'situational-awareness-target-post'
 
 let isAdmin = false
 let session = null
@@ -84,6 +90,59 @@ let searchTimer = null
 let cachedPosts = []
 let hasMorePosts = false
 let searchQuery = ''
+
+function storedTargetPostId() {
+  try {
+    return normalizePostId(window.localStorage.getItem(TARGET_POST_KEY))
+  } catch {
+    return null
+  }
+}
+
+function targetPostId() {
+  return postIdFromSearch(window.location.search) || storedTargetPostId()
+}
+
+function rememberTargetPost(postId) {
+  const normalized = normalizePostId(postId)
+  if (!normalized) return
+  try {
+    window.localStorage.setItem(TARGET_POST_KEY, normalized)
+  } catch {
+    // URL 本身仍然是主路径；本地存储只是 OAuth 回跳丢参数时的保险。
+  }
+}
+
+function restoreTargetPostUrl() {
+  const fromUrl = postIdFromSearch(window.location.search)
+  if (fromUrl) {
+    rememberTargetPost(fromUrl)
+    return fromUrl
+  }
+
+  const stored = storedTargetPostId()
+  if (stored) window.history.replaceState(null, '', postUrl(window.location.href, stored))
+  return stored
+}
+
+function setTargetPostUrl(postId) {
+  const normalized = normalizePostId(postId)
+  if (normalized) rememberTargetPost(normalized)
+  else clearStoredTargetPost()
+  window.history.replaceState(null, '', postUrl(window.location.href, normalized))
+}
+
+function clearStoredTargetPost() {
+  try {
+    window.localStorage.removeItem(TARGET_POST_KEY)
+  } catch {
+    // URL 已经足够维持当前页面状态。
+  }
+}
+
+function isWechatBrowser() {
+  return /MicroMessenger/i.test(window.navigator.userAgent)
+}
 
 // 回复框和编辑框都是 renderFeed 现搭的，任何一次重绘都会把它们连同里面
 // 没提交的字一起扔掉。草稿存在 DOM 之外，重绘后再填回去。
@@ -682,6 +741,7 @@ function forgetPostDrafts(post) {
 
 function makePost(post, shouldOpen = false) {
   const article = element('article', 'post-card')
+  article.id = `post-${post.id}`
   const draftKey = String(post.id)
   const anonymous = Boolean(post.is_anonymous)
 
@@ -771,13 +831,32 @@ function makePost(post, shouldOpen = false) {
     const isOpen = toggle.getAttribute('aria-expanded') === 'true'
     toggle.setAttribute('aria-expanded', String(!isOpen))
     panel.hidden = isOpen
+    if (isOpen && targetPostId() === String(post.id)) setTargetPostUrl(null)
+    else if (!isOpen) setTargetPostUrl(post.id)
+  })
+
+  const share = element('button', 'text-button post-share', '分享')
+  share.type = 'button'
+  share.setAttribute('aria-label', `分享讨论：${post.title}`)
+  share.addEventListener('click', async () => {
+    const url = postUrl(window.location.href, post.id)
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: post.title, text: post.title, url })
+      } else {
+        await navigator.clipboard.writeText(url)
+        showToast('帖子链接已复制。')
+      }
+    } catch (error) {
+      if (error?.name !== 'AbortError') showToast('分享失败，请从浏览器地址栏复制链接。', 'error')
+    }
   })
 
   const topReply = post.replies[0]
   const insight = topReply && Number(topReply.upvote_count) > 0 ? topReply : null
   const insightEl = insight ? makeInsightPreview(insight) : null
   const engage = element('div', 'post-engage')
-  engage.append(toggle)
+  engage.append(toggle, share)
   article.append(header, heading, body)
   if (insightEl) article.append(insightEl)
   article.append(engage, panel)
@@ -977,12 +1056,38 @@ async function loadPosts({ preserveOpenPost = null, quiet = false } = {}) {
   }
 
   try {
-    const page = await backend.listPosts()
+    let page = await backend.listPosts()
+    const requestedPost = targetPostId()
     cachedPosts = page
+
+    // 深链接可能指向首页之后的帖子。只有带 post 参数时才继续翻页，
+    // 普通进入仍然只取一页，避免把整个讨论区都拉下来。
+    while (
+      requestedPost &&
+      page.length === LIMITS.pageSize &&
+      !cachedPosts.some((post) => String(post.id) === requestedPost)
+    ) {
+      page = await backend.listPosts({ before: cachedPosts.at(-1).created_at })
+      cachedPosts = [...cachedPosts, ...page]
+    }
+
     // 取满一页就假定后面还有；多问一次的代价比漏掉内容小
     hasMorePosts = page.length === LIMITS.pageSize
+    if (requestedPost) previouslyOpen.add(requestedPost)
     renderFeed(previouslyOpen)
     elements.feedStatus.hidden = true
+
+    if (requestedPost) {
+      const target = document.getElementById(`post-${requestedPost}`)
+      if (target) {
+        setTargetPostUrl(requestedPost)
+        clearStoredTargetPost()
+        requestAnimationFrame(() => target.scrollIntoView({ block: 'start' }))
+      } else {
+        clearStoredTargetPost()
+        showToast('这条讨论不存在，或你暂时没有查看权限。', 'error')
+      }
+    }
   } catch (error) {
     elements.feedStatus.hidden = false
     elements.feedStatus.textContent = friendlyError(error)
@@ -1062,15 +1167,20 @@ async function renderSession(nextSession) {
   await loadPosts()
 }
 
-elements.copyLoginLink.addEventListener('click', async () => {
-  const url = new URL(window.location.pathname, window.location.origin).href
+async function copyCurrentEntryLink() {
+  const requestedPost = targetPostId()
+  const url = postUrl(window.location.href, requestedPost)
+  if (requestedPost) rememberTargetPost(requestedPost)
   try {
     await navigator.clipboard.writeText(url)
-    showToast('链接已复制，请在 Safari 或 Chrome 中打开。')
+    showToast(requestedPost ? '帖子链接已复制，请在 Safari 或 Chrome 中打开。' : '网站链接已复制，请在 Safari 或 Chrome 中打开。')
   } catch {
-    showToast('请从浏览器地址栏复制网站链接，在 Safari 或 Chrome 中打开。', 'error')
+    showToast('请从浏览器地址栏复制完整链接，在 Safari 或 Chrome 中打开。', 'error')
   }
-})
+}
+
+elements.copyLoginLink.addEventListener('click', copyCurrentEntryLink)
+elements.copyBrowserLink.addEventListener('click', copyCurrentEntryLink)
 
 elements.loginButton.addEventListener('click', async () => {
   setButtonBusy(elements.loginButton, true, '正在登录…')
@@ -1276,6 +1386,8 @@ updatePostIdentity()
 
 async function start() {
   applyLimits()
+  restoreTargetPostUrl()
+  elements.wechatBrowserNotice.hidden = !isWechatBrowser()
   elements.demoBanner.hidden = !backend.isDemo
   if (backend.isDemo) elements.loginButton.querySelector('span').textContent = '进入演示版'
 

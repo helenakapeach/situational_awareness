@@ -34,6 +34,24 @@ export function normalizeInviteCode(value) {
   return String(value ?? '').trim().toUpperCase()
 }
 
+export function normalizePostId(value) {
+  const text = String(value ?? '').trim()
+  return /^\d+$/.test(text) && Number(text) > 0 ? text : null
+}
+
+export function postIdFromSearch(search = '') {
+  return normalizePostId(new URLSearchParams(search).get('post'))
+}
+
+export function postUrl(currentUrl, postId = null) {
+  const url = new URL(currentUrl)
+  const normalized = normalizePostId(postId)
+  url.hash = ''
+  url.search = ''
+  if (normalized) url.searchParams.set('post', normalized)
+  return url.href
+}
+
 export function validateInviteCode(value) {
   const code = normalizeInviteCode(value)
   if (!code) {
