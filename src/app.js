@@ -61,6 +61,11 @@ const elements = {
   copyLoginLink: document.querySelector('#copy-login-link'),
   copyBrowserLink: document.querySelector('#copy-browser-link'),
   logoutButton: document.querySelector('#logout-button'),
+  notificationButton: document.querySelector('#notification-button'),
+  notificationCount: document.querySelector('#notification-count'),
+  notificationList: document.querySelector('#notification-list'),
+  notificationPanel: document.querySelector('#notification-panel'),
+  notificationSummary: document.querySelector('#notification-summary'),
   panelLinks: document.querySelectorAll('.panel-link'),
   panels: document.querySelectorAll('.panel'),
   composerFields: document.querySelector('#composer-fields'),
@@ -146,6 +151,57 @@ function markPostSeen(postId) {
   } catch {
     // 当前页面仍会正确清掉提示；只是下次访问无法保留。
   }
+  renderNotifications()
+}
+
+function unreadPosts() {
+  return cachedPosts
+    .map((post) => ({ post, count: unreadReplyCount(post, lastSeenAt(post.id)) }))
+    .filter(({ count }) => count > 0)
+}
+
+function closeNotifications() {
+  elements.notificationPanel.hidden = true
+  elements.notificationButton.setAttribute('aria-expanded', 'false')
+}
+
+function renderNotifications() {
+  if (!session || !elements.notificationList) return
+
+  const entries = unreadPosts()
+  const total = entries.reduce((sum, entry) => sum + entry.count, 0)
+  elements.notificationCount.hidden = total === 0
+  elements.notificationCount.textContent = total > 99 ? '99+' : String(total)
+  elements.notificationButton.setAttribute(
+    'aria-label',
+    total ? `${total} 条新回复` : '没有新回复',
+  )
+  elements.notificationSummary.textContent = total ? `共 ${total} 条` : '暂时没有'
+  elements.notificationList.replaceChildren()
+
+  if (!entries.length) {
+    elements.notificationList.append(
+      element('p', 'notification-empty', '你参与的讨论有新回复时，会出现在这里。'),
+    )
+    return
+  }
+
+  entries.forEach(({ post, count }) => {
+    const link = element('a', 'notification-item')
+    link.href = postUrl(window.location.href, post.id)
+    link.append(
+      element('span', 'notification-title', post.title),
+      element('strong', 'notification-reply-count', `${count} 条新回复`),
+    )
+    link.addEventListener('click', (event) => {
+      event.preventDefault()
+      markPostSeen(post.id)
+      rememberTargetPost(post.id)
+      closeNotifications()
+      window.location.assign(link.href)
+    })
+    elements.notificationList.append(link)
+  })
 }
 
 function storedTargetPostId() {
@@ -1085,6 +1141,7 @@ function renderFeed(previouslyOpen = new Set()) {
   elements.feedHeadingRow.hidden = Boolean(requestedPost)
   elements.loadMoreRow.hidden = Boolean(requestedPost)
   document.title = detailPost ? `${detailPost.title} · 知局` : BASE_DOCUMENT_TITLE
+  renderNotifications()
 
   if (requestedPost && detailPost) {
     markPostSeen(detailPost.id)
@@ -1246,6 +1303,7 @@ async function renderSession(nextSession) {
     postEditDrafts.clear()
     searchQuery = ''
     elements.searchInput.value = ''
+    closeNotifications()
     showPanel('feed')
     setView('login')
     return
@@ -1296,6 +1354,20 @@ async function copyCurrentEntryLink() {
 
 elements.copyLoginLink.addEventListener('click', copyCurrentEntryLink)
 elements.copyBrowserLink.addEventListener('click', copyCurrentEntryLink)
+
+elements.notificationButton.addEventListener('click', () => {
+  const open = elements.notificationPanel.hidden
+  elements.notificationPanel.hidden = !open
+  elements.notificationButton.setAttribute('aria-expanded', String(open))
+})
+
+document.addEventListener('click', (event) => {
+  if (!event.target.closest('.notification-menu')) closeNotifications()
+})
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') closeNotifications()
+})
 
 elements.loginButton.addEventListener('click', async () => {
   setButtonBusy(elements.loginButton, true, '正在登录…')
