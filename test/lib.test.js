@@ -12,6 +12,7 @@ import {
   normalizeInviteCode,
   normalizePostId,
   postIdFromSearch,
+  postShareText,
   postUrl,
   roleLabel,
   safeAvatarUrl,
@@ -157,6 +158,14 @@ test('post deep links keep only a valid post id', () => {
     postUrl('https://example.com/situational_awareness/?post=7#token'),
     'https://example.com/situational_awareness/',
   )
+})
+
+test('copied post links put the title above the URL', () => {
+  assert.equal(
+    postShareText('在亚麻呆到第三年 每周哭三次', 'https://example.com/?post=42'),
+    '在亚麻呆到第三年 每周哭三次\nhttps://example.com/?post=42',
+  )
+  assert.equal(postShareText('', 'https://example.com/'), 'https://example.com/')
 })
 
 test('display names and initials have safe fallbacks', () => {

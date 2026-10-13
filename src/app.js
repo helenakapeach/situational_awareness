@@ -11,6 +11,7 @@ import {
   isUploadedAvatar,
   normalizePostId,
   postIdFromSearch,
+  postShareText,
   postUrl,
   GRADUATION_YEAR_MAX,
   GRADUATION_YEAR_MIN,
@@ -852,7 +853,7 @@ function makePost(post, shouldOpen = false, { detail = false } = {}) {
   share.addEventListener('click', async () => {
     const url = postUrl(window.location.href, post.id)
     try {
-      await navigator.clipboard.writeText(`${post.title}\n${url}`)
+      await navigator.clipboard.writeText(postShareText(post.title, url))
       showToast('帖子标题和链接已复制，请粘贴到微信。')
     } catch {
       showToast('复制失败，请从浏览器地址栏复制完整链接。', 'error')
@@ -1213,10 +1214,11 @@ async function renderSession(nextSession) {
 
 async function copyCurrentEntryLink() {
   const requestedPost = targetPostId()
+  const requested = cachedPosts.find((post) => String(post.id) === requestedPost)
   const url = postUrl(window.location.href, requestedPost)
   if (requestedPost) rememberTargetPost(requestedPost)
   try {
-    await navigator.clipboard.writeText(url)
+    await navigator.clipboard.writeText(postShareText(requested?.title, url))
     showToast(requestedPost ? '帖子链接已复制，请在 Safari 或 Chrome 中打开。' : '网站链接已复制，请在 Safari 或 Chrome 中打开。')
   } catch {
     showToast('请从浏览器地址栏复制完整链接，在 Safari 或 Chrome 中打开。', 'error')

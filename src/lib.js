@@ -52,6 +52,11 @@ export function postUrl(currentUrl, postId = null) {
   return url.href
 }
 
+export function postShareText(title, url) {
+  const normalizedTitle = normalizeText(title).slice(0, LIMITS.titleMax)
+  return normalizedTitle ? `${normalizedTitle}\n${url}` : url
+}
+
 export function validateInviteCode(value) {
   const code = normalizeInviteCode(value)
   if (!code) {
