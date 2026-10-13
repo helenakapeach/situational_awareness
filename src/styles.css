@@ -849,6 +849,27 @@ textarea::placeholder {
   line-height: 1.45;
 }
 
+.post-title-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.post-title-link:hover {
+  color: var(--brand);
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+.post-detail-nav {
+  margin: 4px 0 16px;
+}
+
+.post-detail-back {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+}
+
 .post-edit {
   margin-top: 8px;
 }

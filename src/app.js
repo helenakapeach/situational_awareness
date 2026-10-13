@@ -38,6 +38,8 @@ const elements = {
   confirmTitle: document.querySelector('#confirm-title'),
   demoBanner: document.querySelector('#demo-banner'),
   feed: document.querySelector('#feed'),
+  feedHeadingRow: document.querySelector('.feed-heading-row'),
+  feedIntro: document.querySelector('#panel-feed > .intro-panel'),
   feedStatus: document.querySelector('#feed-status'),
   feedbackBody: document.querySelector('#feedback-body'),
   feedbackButton: document.querySelector('#feedback-button'),
@@ -50,6 +52,7 @@ const elements = {
   inviteSignoutButton: document.querySelector('#invite-signout-button'),
   inviteView: document.querySelector('#invite-view'),
   loadMoreButton: document.querySelector('#load-more-button'),
+  loadMoreRow: document.querySelector('.load-more-row'),
   loading: document.querySelector('#loading-view'),
   login: document.querySelector('#signed-out-view'),
   loginButton: document.querySelector('#login-button'),
@@ -77,6 +80,7 @@ const elements = {
 
 const THEME_KEY = 'situational-awareness-theme'
 const TARGET_POST_KEY = 'situational-awareness-target-post'
+const BASE_DOCUMENT_TITLE = document.title
 
 let isAdmin = false
 let session = null
@@ -739,7 +743,7 @@ function forgetPostDrafts(post) {
   for (const reply of post.replies) editDrafts.delete(String(reply.id))
 }
 
-function makePost(post, shouldOpen = false) {
+function makePost(post, shouldOpen = false, { detail = false } = {}) {
   const article = element('article', 'post-card')
   article.id = `post-${post.id}`
   const draftKey = String(post.id)
@@ -765,7 +769,16 @@ function makePost(post, shouldOpen = false) {
   header.append(meta)
 
   const heading = element('div', 'post-heading')
-  heading.append(element('h3', 'post-title', post.title), makePostVoteButton(post))
+  const title = element('h3', 'post-title')
+  if (detail) {
+    title.textContent = post.title
+  } else {
+    const titleLink = element('a', 'post-title-link', post.title)
+    titleLink.href = postUrl(window.location.href, post.id)
+    titleLink.addEventListener('click', () => rememberTargetPost(post.id))
+    title.append(titleLink)
+  }
+  heading.append(title, makePostVoteButton(post))
   const body = makeMarkdownBody('post-body', post.body)
 
   // 有草稿却折叠起来，等于把它藏没了
@@ -773,7 +786,7 @@ function makePost(post, shouldOpen = false) {
     replyDrafts.has(draftKey) || post.replies.some((reply) =>
       editDrafts.has(String(reply.id)) || replyDrafts.has(`${post.id}:${reply.id}`))
 
-  const open = shouldOpen || hasDraft
+  const open = detail || shouldOpen || hasDraft
   const toggle = element('button', 'thread-toggle')
   toggle.type = 'button'
   toggle.setAttribute('aria-expanded', String(open))
@@ -831,8 +844,6 @@ function makePost(post, shouldOpen = false) {
     const isOpen = toggle.getAttribute('aria-expanded') === 'true'
     toggle.setAttribute('aria-expanded', String(!isOpen))
     panel.hidden = isOpen
-    if (isOpen && targetPostId() === String(post.id)) setTargetPostUrl(null)
-    else if (!isOpen) setTargetPostUrl(post.id)
   })
 
   const share = element('button', 'text-button post-share', '复制链接')
@@ -841,8 +852,8 @@ function makePost(post, shouldOpen = false) {
   share.addEventListener('click', async () => {
     const url = postUrl(window.location.href, post.id)
     try {
-      await navigator.clipboard.writeText(url)
-      showToast('帖子链接已复制，请粘贴到微信。')
+      await navigator.clipboard.writeText(`${post.title}\n${url}`)
+      showToast('帖子标题和链接已复制，请粘贴到微信。')
     } catch {
       showToast('复制失败，请从浏览器地址栏复制完整链接。', 'error')
     }
@@ -852,9 +863,10 @@ function makePost(post, shouldOpen = false) {
   const insight = topReply && Number(topReply.upvote_count) > 0 ? topReply : null
   const insightEl = insight ? makeInsightPreview(insight) : null
   const engage = element('div', 'post-engage')
-  engage.append(toggle, share)
+  if (detail) engage.append(share)
+  else engage.append(toggle, share)
   article.append(header, heading, body)
-  if (insightEl) article.append(insightEl)
+  if (insightEl && !detail) article.append(insightEl)
   article.append(engage, panel)
 
   function showView() {
@@ -865,7 +877,7 @@ function makePost(post, shouldOpen = false) {
     const more = bodyMoreButton(body)
     if (more) more.hidden = false
     article.querySelector('.post-edit')?.remove()
-    requestAnimationFrame(() => setupCollapsibleBody(body))
+    if (!detail) requestAnimationFrame(() => setupCollapsibleBody(body))
   }
 
   function enterEdit({ focus = true } = {}) {
@@ -969,6 +981,7 @@ function makePost(post, shouldOpen = false) {
         if (isAdmin) await backend.adminDeleteContent(post.id, 'post')
         else await backend.deletePost(post.id)
         forgetPostDrafts(post)
+        if (targetPostId() === String(post.id)) setTargetPostUrl(null)
         await loadPosts()
         showToast('讨论已删除。')
       } catch (error) {
@@ -982,7 +995,7 @@ function makePost(post, shouldOpen = false) {
   }
 
   if (postEditDrafts.has(draftKey)) enterEdit({ focus: false })
-  requestAnimationFrame(() => setupCollapsibleBody(body))
+  if (!detail) requestAnimationFrame(() => setupCollapsibleBody(body))
   return article
 }
 
@@ -995,6 +1008,43 @@ function openPostIds() {
 }
 
 function renderFeed(previouslyOpen = new Set()) {
+  const requestedPost = targetPostId()
+  const detailPost = requestedPost
+    ? cachedPosts.find((post) => String(post.id) === requestedPost)
+    : null
+
+  elements.feedIntro.hidden = Boolean(requestedPost)
+  elements.postForm.hidden = Boolean(requestedPost)
+  elements.feedHeadingRow.hidden = Boolean(requestedPost)
+  elements.loadMoreRow.hidden = Boolean(requestedPost)
+  document.title = detailPost ? `${detailPost.title} · 知局` : BASE_DOCUMENT_TITLE
+
+  if (requestedPost && detailPost) {
+    const detailNav = element('nav', 'post-detail-nav')
+    const back = element('a', 'text-button post-detail-back', '← 返回讨论广场')
+    back.href = postUrl(window.location.href)
+    back.addEventListener('click', () => clearStoredTargetPost())
+    detailNav.append(back)
+    elements.feed.replaceChildren(detailNav, makePost(detailPost, true, { detail: true }))
+    elements.loadMoreButton.hidden = true
+    return
+  }
+
+  if (requestedPost) {
+    const missing = element('div', 'panel-placeholder')
+    const back = element('a', 'text-button post-detail-back', '← 返回讨论广场')
+    back.href = postUrl(window.location.href)
+    back.addEventListener('click', () => clearStoredTargetPost())
+    missing.append(
+      element('strong', '', '没有找到这条讨论。'),
+      element('p', '', '它可能已被删除，或者你暂时没有查看权限。'),
+      back,
+    )
+    elements.feed.replaceChildren(missing)
+    elements.loadMoreButton.hidden = true
+    return
+  }
+
   const query = searchQuery.trim().toLowerCase()
   const visible = query
     ? cachedPosts.filter(
@@ -1069,7 +1119,6 @@ async function loadPosts({ preserveOpenPost = null, quiet = false } = {}) {
 
     // 取满一页就假定后面还有；多问一次的代价比漏掉内容小
     hasMorePosts = page.length === LIMITS.pageSize
-    if (requestedPost) previouslyOpen.add(requestedPost)
     renderFeed(previouslyOpen)
     elements.feedStatus.hidden = true
 
@@ -1078,7 +1127,6 @@ async function loadPosts({ preserveOpenPost = null, quiet = false } = {}) {
       if (target) {
         setTargetPostUrl(requestedPost)
         clearStoredTargetPost()
-        requestAnimationFrame(() => target.scrollIntoView({ block: 'start' }))
       } else {
         clearStoredTargetPost()
         showToast('这条讨论不存在，或你暂时没有查看权限。', 'error')
@@ -1250,11 +1298,18 @@ elements.confirmAccept.addEventListener('click', () => elements.confirmDialog.cl
 elements.themeToggles.forEach((button) => button.addEventListener('click', toggleTheme))
 
 elements.panelLinks.forEach((link) => {
-  link.addEventListener('click', () => showPanel(link.dataset.panel))
+  link.addEventListener('click', () => {
+    if (link.dataset.panel === 'feed' && targetPostId()) {
+      setTargetPostUrl(null)
+      renderFeed(openPostIds())
+    }
+    showPanel(link.dataset.panel)
+  })
 })
 
 elements.searchInput.addEventListener('input', () => {
   searchQuery = elements.searchInput.value
+  if (targetPostId()) setTargetPostUrl(null)
   // 只有讨论广场里有可搜的东西，所以搜索时把人带回那一栏
   showPanel('feed')
   // 每次都要重建整个列表，所以别一个字符跑一次
