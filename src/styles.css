@@ -106,6 +106,31 @@ a:focus-visible {
   height: 31px;
 }
 
+/* 外圈是正圆，转整个 svg 看起来就只有指针在动 */
+.compact-brand:hover .brand-mark svg,
+.login-brand .brand-mark:hover svg {
+  animation: compass-settle 900ms ease-out;
+}
+
+.brand-mark.is-finding-north svg {
+  animation: compass-find-north 1200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes compass-settle {
+  0% { transform: rotate(0deg); }
+  30% { transform: rotate(16deg); }
+  55% { transform: rotate(-9deg); }
+  78% { transform: rotate(4deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes compass-find-north {
+  0% { transform: rotate(0deg); }
+  65% { transform: rotate(400deg); }
+  82% { transform: rotate(348deg); }
+  100% { transform: rotate(360deg); }
+}
+
 .login-help {
   margin-top: 24px;
   text-align: left;
@@ -512,6 +537,36 @@ button:disabled {
   text-align: center;
 }
 
+.post-skeleton {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 22px 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.skeleton-line {
+  height: 12px;
+  background: var(--surface-sunken);
+  border-radius: 6px;
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+.skeleton-line.is-title {
+  width: 46%;
+  height: 16px;
+}
+
+.skeleton-line.is-short {
+  width: 72%;
+}
+
+@keyframes skeleton-pulse {
+  50% { opacity: 0.45; }
+}
+
 .panel-placeholder strong {
   display: block;
   color: var(--text);
@@ -911,6 +966,18 @@ textarea::placeholder {
   line-height: 1;
 }
 
+.avatar.anonymous.is-poked {
+  animation: avatar-poke 520ms ease;
+}
+
+@keyframes avatar-poke {
+  0% { transform: rotate(0deg) scale(1); }
+  20% { transform: rotate(-14deg) scale(1.08); }
+  45% { transform: rotate(10deg) scale(1.08); }
+  70% { transform: rotate(-5deg) scale(1.02); }
+  100% { transform: rotate(0deg) scale(1); }
+}
+
 .avatar img {
   width: 100%;
   height: 100%;
@@ -1281,9 +1348,31 @@ textarea::placeholder {
   flex: 1;
 }
 
+.reply-name-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+}
+
 .reply-name {
   font-size: 15px;
   line-height: 1.35;
+}
+
+.op-mark,
+.reply-new {
+  color: var(--text-faint);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.reply.is-unread:not(.is-insight) > .reply-main {
+  margin: 8px 0;
+  padding: 8px 8px 8px 12px;
+  background: var(--brand-tint);
+  border-radius: 0 8px 8px 0;
+  box-shadow: inset 2px 0 0 var(--brand);
 }
 
 .reply-byline {

@@ -7,10 +7,15 @@ import {
   displayAvatarUrl,
   displayName,
   excerptPlain,
+  formatAbsoluteTime,
   formatRelativeTime,
+  isNewReply,
+  replyIsFromOp,
   groupReplyThreads,
   initials,
+  isLateNight,
   isUploadedAvatar,
+  reachedMilestones,
   normalizeInviteCode,
   normalizePostId,
   postIdFromSearch,
@@ -215,6 +220,57 @@ test('unread replies only count other people after a participated post was seen'
   assert.equal(unreadReplyCount({ is_mine: true, replies: replies.slice(1, 3) }, lastSeen), 1)
   assert.equal(unreadReplyCount({ is_mine: false, replies: replies.slice(1, 3) }, lastSeen), 0)
   assert.equal(unreadReplyCount({ is_mine: true, replies }, 'not-a-date'), 0)
+})
+
+test('absolute time is empty for invalid input and includes the year otherwise', () => {
+  assert.equal(formatAbsoluteTime('not-a-date'), '')
+  assert.match(formatAbsoluteTime('2026-10-13T15:04:00Z'), /2026/)
+})
+
+test('a reply is new only for other people, after the last visit, on a thread you joined', () => {
+  const post = {
+    is_mine: true,
+    replies: [
+      { id: 1, is_mine: false, created_at: '2026-10-13T12:00:00Z' },
+      { id: 2, is_mine: true, created_at: '2026-10-13T13:00:00Z' },
+    ],
+  }
+  const seen = new Date('2026-10-13T11:00:00Z').getTime()
+  assert.equal(isNewReply(post, post.replies[0], seen), true)
+  assert.equal(isNewReply(post, post.replies[1], seen), false)
+  assert.equal(isNewReply(post, post.replies[0], new Date('2026-10-13T12:30:00Z').getTime()), false)
+  assert.equal(isNewReply({ is_mine: false, replies: [post.replies[0]] }, post.replies[0], seen), false)
+})
+
+test('the op badge requires the same author and the same anonymity', () => {
+  assert.equal(replyIsFromOp(true, true, true), true)
+  assert.equal(replyIsFromOp(false, false, true), true)
+  assert.equal(replyIsFromOp(true, false, true), false)
+  assert.equal(replyIsFromOp(false, true, true), false)
+  assert.equal(replyIsFromOp(true, true, false), false)
+})
+
+test('late night runs from 23:00 to before 05:00 local time', () => {
+  const at = (hour) => new Date(2026, 9, 13, hour, 30)
+  assert.equal(isLateNight(at(22)), false)
+  assert.equal(isLateNight(at(23)), true)
+  assert.equal(isLateNight(at(0)), true)
+  assert.equal(isLateNight(at(4)), true)
+  assert.equal(isLateNight(at(5)), false)
+})
+
+test('milestones need someone else to answer or vote', () => {
+  assert.deepEqual(reachedMilestones([]), [])
+  assert.deepEqual(reachedMilestones([
+    { is_mine: true, upvote_count: 1, liked_by_me: true, replies: [{ is_mine: true, upvote_count: 1, liked_by_me: true }] },
+  ]), [])
+  assert.deepEqual(reachedMilestones([
+    { is_mine: false, upvote_count: 5, replies: [{ is_mine: false, upvote_count: 3 }] },
+  ]), [])
+  assert.deepEqual(reachedMilestones([
+    { is_mine: true, upvote_count: 2, liked_by_me: true, replies: [{ is_mine: false, upvote_count: 0 }] },
+    { is_mine: false, upvote_count: 0, replies: [{ is_mine: true, upvote_count: 1, liked_by_me: false }] },
+  ]), ['firstAnswer', 'firstGoodQuestion', 'firstReplyUpvote'])
 })
 
 test('display names and initials have safe fallbacks', () => {

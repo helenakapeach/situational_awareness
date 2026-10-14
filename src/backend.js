@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
-import { LIMITS, normalizeInviteCode, postIdFromSearch, postUrl, sortReplies, withVoteState } from './lib.js'
+import { LIMITS, normalizeInviteCode, postIdFromSearch, postUrl, replyIsFromOp, sortReplies, withVoteState } from './lib.js'
 
-const DEMO_STORAGE_KEY = 'situational-awareness-demo-v8'
+const DEMO_STORAGE_KEY = 'situational-awareness-demo-v9'
 const DEMO_SESSION_KEY = 'situational-awareness-demo-session'
 const DEMO_MEMBER_KEY = 'situational-awareness-demo-member'
 const DEMO_INVITE_CODE = 'DEMO2026'
@@ -123,7 +123,7 @@ function hoursAgo(hours) {
 function initialDemoData() {
   return {
     nextPostId: 3,
-    nextReplyId: 6,
+    nextReplyId: 7,
     nextFeedbackId: 1,
     feedback: [],
     posts: [
@@ -153,6 +153,17 @@ function initialDemoData() {
       },
     ],
     replies: [
+      {
+        id: 6,
+        post_id: 2,
+        author_id: 'seed-poster',
+        author_name: '匿名成员',
+        author_avatar_url: '',
+        is_anonymous: true,
+        body: '补一句：验收那条线下周必须交，所以新项目我最多只能拿出三天。',
+        created_at: hoursAgo(0.2),
+        upvote_count: 0,
+      },
       {
         id: 5,
         post_id: 2,
@@ -413,19 +424,26 @@ export function createBackend() {
       if (postsError) throw postsError
       if (!posts.length) return []
 
-      const { data: replies, error: repliesError } = await supabase
-        .from('replies')
-        .select('id,post_id,parent_reply_id,author_name,author_avatar_url,author_public_id,author_role,author_cohort_name,author_role_verified,is_anonymous,body,created_at,updated_at,upvote_count,reply_votes(reply_id)')
-        .in('post_id', posts.map((post) => post.id))
+      const postIds = posts.map((post) => post.id)
+      const [
+        { data: replies, error: repliesError },
+        { data: ownership, error: ownershipError },
+        { data: opReplyIds, error: opError },
+      ] = await Promise.all([
+        supabase
+          .from('replies')
+          .select('id,post_id,parent_reply_id,author_name,author_avatar_url,author_public_id,author_role,author_cohort_name,author_role_verified,is_anonymous,body,created_at,updated_at,upvote_count,reply_votes(reply_id)')
+          .in('post_id', postIds),
+        supabase.rpc('own_content_ids', { p_post_ids: postIds }),
+        supabase.rpc('op_reply_ids', { p_post_ids: postIds }),
+      ])
 
       if (repliesError) throw repliesError
-
-      const { data: ownership, error: ownershipError } = await supabase.rpc('own_content_ids', {
-        p_post_ids: posts.map((post) => post.id),
-      })
       if (ownershipError) throw ownershipError
+      if (opError) throw opError
       const ownPosts = new Set((ownership?.posts || []).map(String))
       const ownReplies = new Set((ownership?.replies || []).map(String))
+      const opReplies = new Set((opReplyIds || []).map(String))
 
       const repliesByPost = new Map()
       for (const { reply_votes, ...reply } of replies || []) {
@@ -433,7 +451,11 @@ export function createBackend() {
         if (!repliesByPost.has(key)) repliesByPost.set(key, [])
         repliesByPost
           .get(key)
-          .push(withVoteState({ ...reply, is_mine: ownReplies.has(String(reply.id)) }, reply_votes && reply_votes.length > 0))
+          .push(withVoteState({
+            ...reply,
+            is_mine: ownReplies.has(String(reply.id)),
+            is_op: opReplies.has(String(reply.id)),
+          }, reply_votes && reply_votes.length > 0))
       }
 
       return posts.map(({ post_votes, ...post }) => ({
@@ -708,6 +730,7 @@ function createDemoBackend() {
                       ...replyRest,
                       ...(reply.is_anonymous && contentIdentity(null)),
                       is_mine: replyAuthorId === demoUser.id,
+                      is_op: replyIsFromOp(isAnonymous, reply.is_anonymous, replyAuthorId === author_id),
                     },
                     likedReplyIds.has(Number(reply.id)),
                   )

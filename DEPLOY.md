@@ -50,7 +50,7 @@ npm run dev
    npx supabase@2.117.0 db push
    ```
 
-   `db push` 成功才算数据库就绪。缺哪一条 migration，对应功能就会在网页上失败（例如没有 `reply_is_mine` / `post_is_mine` 时，feed 会整页挂掉）。
+   `db push` 成功才算数据库就绪。缺哪一条 migration，对应功能就会在网页上失败（例如没有 `own_content_ids`、`op_reply_ids`、`profiles` 或 `replies.parent_reply_id` 时，feed 会整页挂掉）。头像用的 `avatars` Storage bucket 也由 migration 创建，不用手动建。
 
 ### 3. 打开 Google 登录，关掉邮箱注册
 
@@ -113,7 +113,7 @@ npm run dev
 
 ### 6. 建邀请码
 
-没有管理后台。在 Supabase **SQL editor** 里执行（码必须大写，小写会直接被约束拒绝）：
+站内管理员区不管邀请码。在 Supabase **SQL editor** 里执行（码必须大写，小写会直接被约束拒绝）：
 
 ```sql
 insert into public.invite_codes (code) values ('YOUR-CODE');
@@ -128,16 +128,30 @@ select code, is_active, used_count, max_uses from public.invite_codes;
 update public.invite_codes set is_active = false where code = 'YOUR-CODE';
 ```
 
-### 7. 验收
+### 7. 设管理员
+
+管理员能在「我」里看成员列表、停用 / 恢复账号、认证角色、删除任何讨论和回复。授予管理员没有界面，只能在 SQL editor 里做（对方要先登录并兑换过邀请码）：
+
+```sql
+update public.members set is_admin = true
+where user_id = (select id from auth.users where email = 'admin@example.com');
+```
+
+管理员不能在界面里被停用；要撤销，同样用 SQL 把 `is_admin` 改回 `false`。
+
+### 8. 验收
 
 用一个不在演示模式的正式站（Variables 已配好）：
 
 1. Google 能登录
 2. 第一次用邀请码能进；同一账号再登录不用再兑
-3. 发帖是匿名的，回复默认真名、可勾选匿名
-4. 能给别人的回复点赞，高赞会排到上面
-5. **自己的**回复出现「编辑」「删除」（匿名回复也一样，只有作者看得到按钮）
-6. 没登录只能看到登录页，看不到帖子
+3. 发帖默认匿名、可取消勾选实名发；回复默认实名、可勾选匿名
+4. 能给别人的回复点赞，高赞会排到上面；能回复某一条具体回复
+5. **自己的**帖子和回复出现「编辑」「删除」（匿名的也一样，只有作者看得到按钮）
+6. 「我」里能改资料、上传头像；点实名内容上的名字能弹出主页卡片，没公开的联系方式看不到
+7. 管理员账号在「我」下方能看到管理员区；停用某个测试账号后，该账号立刻读不到、也发不了任何内容
+8. 没登录打开某条讨论的链接，登录后会回到那条讨论
+9. 没登录只能看到登录页，看不到帖子
 
 读用户反馈（客户端不能读，只能在 SQL editor）：
 
@@ -193,6 +207,8 @@ git log --oneline origin/main -- supabase/migrations/
 |---|---|
 | 线上是演示横幅，登录不走 Google | GitHub Actions Variables 没配，或名字拼错 |
 | 登录后一直要邀请码 / 没权限 | 没 `db push`、没有 `members` 表，或还没插邀请码 |
-| 讨论列表一进来就失败 | 网页比数据库新，缺 migration（现在最常见的是缺 `reply_is_mine` 或 `post_is_mine`） |
+| 讨论列表一进来就失败 | 网页比数据库新，缺 migration（跑 `npx supabase@2.117.0 migration list` 看线上缺哪几条） |
+| 「我」里看不到管理员区 | 没在 SQL 里设 `is_admin = true`，或这个账号被停用了 |
+| 某个成员登录后什么都看不到、发不了 | 被管理员停用了（`members.is_disabled = true`） |
 | Google 登录弹窗报 redirect mismatch | JavaScript origin 或 Redirect URL 没包含当前站点 |
 | 本地 `file://` 打开是乱码或不能登录 | 要用 `npm run dev`，不要直接打开 HTML |

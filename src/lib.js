@@ -134,6 +134,18 @@ export function formatRelativeTime(input, now = Date.now()) {
   }).format(new Date(input))
 }
 
+export function formatAbsoluteTime(input) {
+  const date = new Date(input)
+  if (!Number.isFinite(date.getTime())) return ''
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
 export function safeAvatarUrl(value) {
   if (!value) return null
 
@@ -371,18 +383,65 @@ export function withVoteState(item, liked) {
   }
 }
 
-export function unreadReplyCount(post, lastSeenAt) {
-  const replies = Array.isArray(post?.replies) ? post.replies : []
-  const participated = Boolean(post?.is_mine) || replies.some((reply) => reply?.is_mine)
-  const cutoff = typeof lastSeenAt === 'number'
-    ? lastSeenAt
-    : new Date(lastSeenAt).getTime()
-  if (!participated || !Number.isFinite(cutoff)) return 0
+function seenCutoff(lastSeenAt) {
+  const cutoff = typeof lastSeenAt === 'number' ? lastSeenAt : new Date(lastSeenAt).getTime()
+  return Number.isFinite(cutoff) ? cutoff : null
+}
 
-  return replies.filter((reply) => {
-    const createdAt = new Date(reply?.created_at).getTime()
-    return !reply?.is_mine && Number.isFinite(createdAt) && createdAt > cutoff
-  }).length
+function participatedIn(post) {
+  const replies = Array.isArray(post?.replies) ? post.replies : []
+  return Boolean(post?.is_mine) || replies.some((reply) => reply?.is_mine)
+}
+
+export function isNewReply(post, reply, lastSeenAt) {
+  const cutoff = seenCutoff(lastSeenAt)
+  if (!participatedIn(post) || cutoff === null || reply?.is_mine) return false
+  const createdAt = new Date(reply?.created_at).getTime()
+  return Number.isFinite(createdAt) && createdAt > cutoff
+}
+
+export function unreadReplyCount(post, lastSeenAt) {
+  if (!participatedIn(post) || seenCutoff(lastSeenAt) === null) return 0
+  const replies = Array.isArray(post?.replies) ? post.replies : []
+  return replies.filter((reply) => isNewReply(post, reply, lastSeenAt)).length
+}
+
+// Same author is not enough: the badge only shows when the reply and the post
+// are both anonymous or both named. A mismatch would tie a hidden identity to
+// a visible one.
+export function replyIsFromOp(postAnonymous, replyAnonymous, sameAuthor) {
+  return Boolean(sameAuthor) && Boolean(postAnonymous) === Boolean(replyAnonymous)
+}
+
+export function isLateNight(date = new Date()) {
+  const hour = date.getHours()
+  return hour >= 23 || hour < 5
+}
+
+export const MILESTONES = Object.freeze({
+  firstAnswer: '你的问题收到了第一个回答。',
+  firstGoodQuestion: '第一次有人觉得你问了个好问题。',
+  firstReplyUpvote: '你的回答第一次被人点了赞。',
+})
+
+// A milestone is someone else noticing you, so the viewer's own vote never counts.
+function votesFromOthers(item) {
+  return Math.max(0, (Number(item?.upvote_count) || 0) - (item?.liked_by_me ? 1 : 0))
+}
+
+export function reachedMilestones(posts) {
+  const reached = new Set()
+  for (const post of posts || []) {
+    const replies = Array.isArray(post?.replies) ? post.replies : []
+    if (post?.is_mine) {
+      if (replies.some((reply) => !reply?.is_mine)) reached.add('firstAnswer')
+      if (votesFromOthers(post) > 0) reached.add('firstGoodQuestion')
+    }
+    if (replies.some((reply) => reply?.is_mine && votesFromOthers(reply) > 0)) {
+      reached.add('firstReplyUpvote')
+    }
+  }
+  return Object.keys(MILESTONES).filter((key) => reached.has(key))
 }
 
 // Root replies keep vote ranking; conversations always read oldest to newest.

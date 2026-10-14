@@ -7,10 +7,14 @@ import {
   displayAvatarUrl,
   displayName,
   excerptPlain,
+  formatAbsoluteTime,
   formatRelativeTime,
   groupReplyThreads,
+  isNewReply,
   initials,
+  isLateNight,
   isUploadedAvatar,
+  MILESTONES,
   normalizePostId,
   postIdFromSearch,
   postShareText,
@@ -20,6 +24,7 @@ import {
   graduationLabel,
   ROLES,
   linkedInDisplayValue,
+  reachedMilestones,
   roleLabel,
   unreadReplyCount,
   validateFeedback,
@@ -76,6 +81,8 @@ const elements = {
   panelLinks: document.querySelectorAll('.panel-link'),
   panels: document.querySelectorAll('.panel'),
   composerFields: document.querySelector('#composer-fields'),
+  brandLink: document.querySelector('.compact-brand'),
+  composerHeading: document.querySelector('.composer-heading'),
   composerHint: document.querySelector('#composer-hint'),
   composerToggle: document.querySelector('#composer-toggle'),
   composerToggleLabel: document.querySelector('#composer-toggle-label'),
@@ -96,6 +103,7 @@ const THEME_KEY = 'situational-awareness-theme'
 const TARGET_POST_KEY = 'situational-awareness-target-post'
 const UNREAD_BASELINE_KEY = 'situational-awareness-unread-baseline'
 const POST_SEEN_KEY = 'situational-awareness-post-seen'
+const MILESTONES_KEY = 'situational-awareness-milestones'
 const BASE_DOCUMENT_TITLE = document.title
 
 let isAdmin = false
@@ -110,6 +118,8 @@ let searchTimer = null
 let cachedPosts = []
 let hasMorePosts = false
 let searchQuery = ''
+let detailOrigin = null
+let likesReturnScroll = 0
 let unreadTrackingUserId = null
 let unreadBaselineAt = Date.now()
 let postSeenAt = {}
@@ -146,6 +156,27 @@ function initializeUnreadTracking() {
 
 function lastSeenAt(postId) {
   return Number(postSeenAt[String(postId)]) || unreadBaselineAt
+}
+
+function celebrateMilestones() {
+  if (!session) return
+  const key = userStorageKey(MILESTONES_KEY)
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(key))
+    const firstRun = !saved || typeof saved !== 'object' || Array.isArray(saved)
+    const known = firstRun ? {} : saved
+    // 只看第一页：更早的帖子要靠「加载更多」或深链接才会取回，
+    // 算进来会把很久以前的回答当成「第一次」报出来。
+    const fresh = reachedMilestones(cachedPosts.slice(0, LIMITS.pageSize))
+      .filter((name) => !known[name])
+    if (!fresh.length && !firstRun) return
+    fresh.forEach((name) => { known[name] = Date.now() })
+    window.localStorage.setItem(key, JSON.stringify(known))
+    // 第一次只默默记下已经达成的，否则老成员一上线会被祝贺一堆旧事。
+    if (!firstRun) showToast(MILESTONES[fresh[0]])
+  } catch {
+    // 存不下就分不清新旧，宁可不提示，也不要每次刷新都重复祝贺。
+  }
 }
 
 function markPostSeen(postId) {
@@ -265,12 +296,80 @@ function isWechatBrowser() {
 }
 
 // 回复框和编辑框都是 renderFeed 现搭的，任何一次重绘都会把它们连同里面
-// 没提交的字一起扔掉。草稿存在 DOM 之外，重绘后再填回去。
-const replyDrafts = new Map()
+// 没提交的字一起扔掉。草稿存在 DOM 之外，重绘后再填回去，并按用户写入
+// localStorage，刷新或走完登录还能在。退出登录时整份删掉。
+const DRAFTS_KEY = 'situational-awareness-drafts'
+let draftOwnerId = null
+let restoringDrafts = false
+
+function persistDrafts() {
+  if (restoringDrafts || !draftOwnerId) return
+  const key = `${DRAFTS_KEY}:${draftOwnerId}`
+  const empty = replyDrafts.size + editDrafts.size + postEditDrafts.size === 0
+  try {
+    if (empty) window.localStorage.removeItem(key)
+    else {
+      window.localStorage.setItem(key, JSON.stringify({
+        replies: Object.fromEntries(replyDrafts),
+        edits: Object.fromEntries(editDrafts),
+        posts: Object.fromEntries(postEditDrafts),
+      }))
+    }
+  } catch {
+    // 无痕模式写不进去时，本次会话里的 Map 仍然留着草稿。
+  }
+}
+
+function trackDrafts(map) {
+  return new Proxy(map, {
+    get(target, prop) {
+      if (prop === 'set' || prop === 'delete' || prop === 'clear') {
+        return (...args) => {
+          const result = target[prop](...args)
+          persistDrafts()
+          return result
+        }
+      }
+      const value = Reflect.get(target, prop, target)
+      return typeof value === 'function' ? value.bind(target) : value
+    },
+  })
+}
+
+const replyDrafts = trackDrafts(new Map())
+const editDrafts = trackDrafts(new Map())
+const postEditDrafts = trackDrafts(new Map())
 const threadPersonas = new Map()
 const collapsedReplyThreads = new Set()
-const editDrafts = new Map()
-const postEditDrafts = new Map()
+
+function restoreDrafts(userId) {
+  draftOwnerId = userId
+  restoringDrafts = true
+  replyDrafts.clear()
+  editDrafts.clear()
+  postEditDrafts.clear()
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(`${DRAFTS_KEY}:${userId}`) || 'null')
+    if (saved && typeof saved === 'object') {
+      for (const [key, value] of Object.entries(saved.replies || {})) {
+        if (value && typeof value.body === 'string') {
+          replyDrafts.set(key, { body: value.body, anonymous: Boolean(value.anonymous) })
+        }
+      }
+      for (const [key, value] of Object.entries(saved.edits || {})) {
+        if (typeof value === 'string') editDrafts.set(key, value)
+      }
+      for (const [key, value] of Object.entries(saved.posts || {})) {
+        if (value && typeof value.title === 'string' && typeof value.body === 'string') {
+          postEditDrafts.set(key, { title: value.title, body: value.body })
+        }
+      }
+    }
+  } catch {
+    // 损坏的本地数据就当没有草稿。
+  }
+  restoringDrafts = false
+}
 
 function showPanel(name) {
   elements.panels.forEach((panel) => {
@@ -383,6 +482,24 @@ function element(tag, className, text) {
   return node
 }
 
+function makeTime(className, input) {
+  const node = element('time', className, formatRelativeTime(input))
+  const absolute = formatAbsoluteTime(input)
+  if (absolute) {
+    node.dateTime = new Date(input).toISOString()
+    node.title = absolute
+  }
+  return node
+}
+
+function submitOnCommandEnter(form) {
+  form.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' || !(event.metaKey || event.ctrlKey)) return
+    event.preventDefault()
+    form.requestSubmit()
+  })
+}
+
 function makeMarkdownBody(className, source) {
   const body = element('div', `${className} markdown-body`)
   try {
@@ -411,13 +528,26 @@ function rememberThreadPersonas(post) {
 
 function makeAvatar(name, avatarUrl, anonymous = false, onOpen = null, personaId = null) {
   const persona = anonymous ? personaFor(personaId) : null
-  const wrapper = element(onOpen ? 'button' : 'div', anonymous ? 'avatar anonymous' : 'avatar')
+  const pokeable = Boolean(persona) && !onOpen
+  const wrapper = element(onOpen || pokeable ? 'button' : 'div', anonymous ? 'avatar anonymous' : 'avatar')
   if (onOpen) {
     wrapper.type = 'button'
     wrapper.setAttribute('aria-label', `查看${name || '成员'}的主页`)
     wrapper.addEventListener('click', onOpen)
   } else {
     wrapper.setAttribute('aria-hidden', 'true')
+  }
+  if (pokeable) {
+    // 彩蛋只给鼠标和触屏：不进 Tab 顺序，也不让读屏多读一遍名字
+    wrapper.type = 'button'
+    wrapper.tabIndex = -1
+    wrapper.addEventListener('click', () => {
+      wrapper.classList.remove('is-poked')
+      void wrapper.offsetWidth
+      wrapper.classList.add('is-poked')
+      showToast(`${persona.emoji} 这只${persona.name}只代表这一条。匿名身份每条随机，不对应任何人。`)
+    })
+    wrapper.addEventListener('animationend', () => wrapper.classList.remove('is-poked'))
   }
 
   if (persona) {
@@ -438,10 +568,11 @@ function makeAvatar(name, avatarUrl, anonymous = false, onOpen = null, personaId
   return wrapper
 }
 
-function makeReply(reply, { highlighted = false, replyMap = new Map(), threadRootId = null } = {}) {
+function makeReply(reply, { highlighted = false, unread = false, replyMap = new Map(), threadRootId = null } = {}) {
   const draftKey = String(reply.id)
   const anonymous = Boolean(reply.is_anonymous)
   const item = element('li', highlighted ? 'reply is-insight' : 'reply')
+  if (unread) item.classList.add('is-unread')
   item.id = `comment-${reply.id}`
   const main = element('div', 'reply-main')
   main.append(makeAvatar(
@@ -453,10 +584,14 @@ function makeReply(reply, { highlighted = false, replyMap = new Map(), threadRoo
   ))
 
   const content = element('div', 'reply-content')
-  const who = element('div')
-  who.append(makeAuthorName(reply.author_name, reply.author_public_id, anonymous, 'reply-name', `reply-${reply.id}`))
+  const who = element('div', 'reply-who')
+  const nameRow = element('div', 'reply-name-row')
+  nameRow.append(makeAuthorName(reply.author_name, reply.author_public_id, anonymous, 'reply-name', `reply-${reply.id}`))
+  if (reply.is_op) nameRow.append(element('span', 'op-mark', '楼主'))
+  who.append(nameRow)
   const byline = element('div', 'reply-byline')
-  byline.append(element('time', 'reply-time', formatRelativeTime(reply.created_at)))
+  byline.append(makeTime('reply-time', reply.created_at))
+  if (unread) byline.append(element('span', 'reply-new', '新'))
   const parent = replyMap.get(String(reply.parent_reply_id))
   if (parent && String(parent.id) !== String(threadRootId)) {
     const parentName = parent.is_anonymous ? personaFor(`reply-${parent.id}`).name : parent.author_name || 'Google 用户'
@@ -536,6 +671,7 @@ function makeReply(reply, { highlighted = false, replyMap = new Map(), threadRoo
     cancel.addEventListener('click', showView)
     actions.append(count, cancel, save)
     form.append(label, textarea, actions)
+    submitOnCommandEnter(form)
 
     form.addEventListener('submit', async (event) => {
       event.preventDefault()
@@ -795,6 +931,7 @@ function makeReplyForm(postId, target = null) {
     actions.insertBefore(cancel, button)
   }
   form.append(label, textarea, actions)
+  submitOnCommandEnter(form)
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault()
@@ -907,7 +1044,7 @@ function makePost(post, shouldOpen = false, { detail = false } = {}) {
   const meta = element('div', 'post-meta')
   meta.append(
     makeAuthorName(post.author_name, post.author_public_id, anonymous, 'post-author', `post-${post.id}`),
-    element('time', 'post-time', formatRelativeTime(post.created_at)),
+    makeTime('post-time', post.created_at),
   )
   const postRole = anonymous ? null : makeRoleTag(post.author_role, post.author_cohort_name, post.author_role_verified)
   if (postRole) meta.append(postRole)
@@ -957,8 +1094,9 @@ function makePost(post, shouldOpen = false, { detail = false } = {}) {
       post.replies.length ? `${post.replies.length} 条回复` : '还没有回复',
     ),
   )
+  const seenBeforeOpen = lastSeenAt(post.id)
   if (open) markPostSeen(post.id)
-  const newReplyCount = unreadReplyCount(post, lastSeenAt(post.id))
+  const newReplyCount = unreadReplyCount(post, seenBeforeOpen)
   const unreadBadge = newReplyCount
     ? element('span', 'new-replies-badge', `${newReplyCount} 条新回复`)
     : null
@@ -969,7 +1107,12 @@ function makePost(post, shouldOpen = false, { detail = false } = {}) {
     const replyMap = new Map(post.replies.map(reply => [String(reply.id), reply]))
     groupReplyThreads(post.replies).forEach(({ root, children }, index) => {
       const highlighted = index === 0 && Number(root.upvote_count) > 0
-      const item = makeReply(root, { highlighted, replyMap, threadRootId: root.id })
+      const item = makeReply(root, {
+        highlighted,
+        unread: isNewReply(post, root, seenBeforeOpen),
+        replyMap,
+        threadRootId: root.id,
+      })
       if (children.length) {
         const conversation = element('details', 'reply-conversation')
         const key = String(root.id)
@@ -977,7 +1120,11 @@ function makePost(post, shouldOpen = false, { detail = false } = {}) {
           replyDrafts.has(`${post.id}:${reply.id}`) || editDrafts.has(String(reply.id)))
         const summary = element('summary', 'reply-conversation-toggle', `${children.length} 条跟帖`)
         const nested = element('ol', 'nested-replies')
-        children.forEach(reply => nested.append(makeReply(reply, { replyMap, threadRootId: root.id })))
+        children.forEach(reply => nested.append(makeReply(reply, {
+          unread: isNewReply(post, reply, seenBeforeOpen),
+          replyMap,
+          threadRootId: root.id,
+        })))
         conversation.append(summary, nested)
         conversation.addEventListener('toggle', () => {
           if (conversation.open) collapsedReplyThreads.delete(key)
@@ -1169,7 +1316,48 @@ function likedAuthorLabel(item, kind) {
   return personaFor(`${kind}-${item.id}`).name
 }
 
+function backArrowIcon() {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  svg.setAttribute('viewBox', '0 0 24 24')
+  svg.setAttribute('aria-hidden', 'true')
+  for (const d of ['M19 12H5', 'm11 6-6 6 6 6']) {
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    path.setAttribute('d', d)
+    svg.append(path)
+  }
+  return svg
+}
+
+function returnToLikes() {
+  const scroll = likesReturnScroll
+  detailOrigin = null
+  setTargetPostUrl(null)
+  showPanel('likes')
+  window.scrollTo({ top: scroll })
+}
+
+function makeDetailBack() {
+  if (detailOrigin === 'likes') {
+    const back = element('button', 'icon-button post-detail-back')
+    back.type = 'button'
+    back.setAttribute('aria-label', '返回赞过')
+    back.append(backArrowIcon())
+    back.addEventListener('click', returnToLikes)
+    return back
+  }
+
+  const back = element('a', 'text-button post-detail-back', '← 返回讨论广场')
+  back.href = postUrl(window.location.href)
+  back.addEventListener('click', () => {
+    detailOrigin = null
+    clearStoredTargetPost()
+  })
+  return back
+}
+
 async function openLikedItem(postId, replyId) {
+  likesReturnScroll = window.scrollY || document.documentElement.scrollTop
+  detailOrigin = 'likes'
   setTargetPostUrl(postId)
   showPanel('feed')
   if (!cachedPosts.some((post) => String(post.id) === String(postId))) await loadPosts()
@@ -1252,6 +1440,34 @@ elements.backToTop.addEventListener('click', () => {
   window.scrollTo({ top: 0, behavior: 'smooth' })
 })
 
+const COMPASS_LINE = '指针回到正北。知局：先看清局面，再做判断。'
+let brandClicks = []
+
+// 已经在广场首页时，点 logo 只回到顶部、不整页重载（重载会丢掉没发出去的草稿）。
+// 两秒内连点五下，罗盘转一圈找回正北。
+elements.brandLink.addEventListener('click', (event) => {
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+  if (postIdFromSearch(window.location.search) || document.querySelector('#panel-feed').hidden) return
+  event.preventDefault()
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+
+  const now = Date.now()
+  brandClicks = [...brandClicks.filter((time) => now - time < 2000), now]
+  if (brandClicks.length < 5) return
+  brandClicks = []
+  const mark = elements.brandLink.querySelector('.brand-mark')
+  mark.classList.remove('is-finding-north')
+  void mark.offsetWidth
+  mark.classList.add('is-finding-north')
+  showToast(COMPASS_LINE)
+})
+
+elements.brandLink.addEventListener('animationend', (event) => {
+  if (event.animationName === 'compass-find-north') {
+    elements.brandLink.querySelector('.brand-mark').classList.remove('is-finding-north')
+  }
+})
+
 function openPostIds() {
   return new Set(
     [...elements.feed.querySelectorAll('.thread-panel[data-post-id]:not([hidden])')].map(
@@ -1276,10 +1492,7 @@ function renderFeed(previouslyOpen = new Set()) {
   if (requestedPost && detailPost) {
     markPostSeen(detailPost.id)
     const detailNav = element('nav', 'post-detail-nav')
-    const back = element('a', 'text-button post-detail-back', '← 返回讨论广场')
-    back.href = postUrl(window.location.href)
-    back.addEventListener('click', () => clearStoredTargetPost())
-    detailNav.append(back)
+    detailNav.append(makeDetailBack())
     elements.feed.replaceChildren(detailNav, makePost(detailPost, true, { detail: true }))
     elements.loadMoreButton.hidden = true
     return
@@ -1287,13 +1500,10 @@ function renderFeed(previouslyOpen = new Set()) {
 
   if (requestedPost) {
     const missing = element('div', 'panel-placeholder')
-    const back = element('a', 'text-button post-detail-back', '← 返回讨论广场')
-    back.href = postUrl(window.location.href)
-    back.addEventListener('click', () => clearStoredTargetPost())
     missing.append(
       element('strong', '', '没有找到这条讨论。'),
       element('p', '', '它可能已被删除，或者你暂时没有查看权限。'),
-      back,
+      makeDetailBack(),
     )
     elements.feed.replaceChildren(missing)
     elements.loadMoreButton.hidden = true
@@ -1342,6 +1552,25 @@ function renderFeed(previouslyOpen = new Set()) {
   elements.feed.append(empty)
 }
 
+function showFeedSkeleton() {
+  elements.feedStatus.hidden = false
+  elements.feedStatus.classList.add('sr-only')
+  elements.feedStatus.classList.remove('error')
+  elements.feedStatus.textContent = '正在加载讨论…'
+  elements.feed.setAttribute('aria-busy', 'true')
+  elements.feed.replaceChildren()
+  for (let index = 0; index < 3; index += 1) {
+    const card = element('div', 'post-skeleton')
+    card.setAttribute('aria-hidden', 'true')
+    card.append(
+      element('span', 'skeleton-line is-title'),
+      element('span', 'skeleton-line'),
+      element('span', 'skeleton-line is-short'),
+    )
+    elements.feed.append(card)
+  }
+}
+
 async function loadPosts({ preserveOpenPost = null, quiet = false } = {}) {
   if (loadingPosts) return
   loadingPosts = true
@@ -1349,9 +1578,7 @@ async function loadPosts({ preserveOpenPost = null, quiet = false } = {}) {
   if (preserveOpenPost) previouslyOpen.add(String(preserveOpenPost))
 
   if (!quiet) {
-    elements.feedStatus.hidden = false
-    elements.feedStatus.textContent = '正在加载讨论…'
-    elements.feedStatus.classList.remove('error')
+    showFeedSkeleton()
     elements.refreshButton.classList.add('spinning')
     elements.refreshButton.disabled = true
   }
@@ -1376,6 +1603,7 @@ async function loadPosts({ preserveOpenPost = null, quiet = false } = {}) {
     hasMorePosts = page.length === LIMITS.pageSize
     renderFeed(previouslyOpen)
     elements.feedStatus.hidden = true
+    celebrateMilestones()
 
     if (requestedPost) {
       const target = document.getElementById(`post-${requestedPost}`)
@@ -1388,10 +1616,14 @@ async function loadPosts({ preserveOpenPost = null, quiet = false } = {}) {
       }
     }
   } catch (error) {
+    elements.feed.replaceChildren()
     elements.feedStatus.hidden = false
+    elements.feedStatus.classList.remove('sr-only')
     elements.feedStatus.textContent = friendlyError(error)
     elements.feedStatus.classList.add('error')
   } finally {
+    elements.feedStatus.classList.remove('sr-only')
+    elements.feed.removeAttribute('aria-busy')
     loadingPosts = false
     elements.refreshButton.classList.remove('spinning')
     elements.refreshButton.disabled = false
@@ -1417,6 +1649,12 @@ async function loadMorePosts() {
 }
 
 async function renderSession(nextSession) {
+  if (!nextSession) {
+    replyDrafts.clear()
+    editDrafts.clear()
+    postEditDrafts.clear()
+    draftOwnerId = null
+  }
   session = nextSession
   if (!session) {
     ownProfile = null
@@ -1428,9 +1666,6 @@ async function renderSession(nextSession) {
     document.querySelector('#profile-dialog').close()
     cachedPosts = []
     hasMorePosts = false
-    replyDrafts.clear()
-    editDrafts.clear()
-    postEditDrafts.clear()
     searchQuery = ''
     elements.searchInput.value = ''
     closeNotifications()
@@ -1439,6 +1674,7 @@ async function renderSession(nextSession) {
     return
   }
 
+  restoreDrafts(session.user.id)
   const access = await backend.memberAccess()
   isAdmin = access.is_admin
   document.querySelector('#admin-tools').hidden = !isAdmin
@@ -1495,8 +1731,22 @@ document.addEventListener('click', (event) => {
   if (!event.target.closest('.notification-menu')) closeNotifications()
 })
 
+function shortcutBlocked(target) {
+  const tag = target?.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) return true
+  return Boolean(target?.closest?.('dialog[open]'))
+}
+
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') closeNotifications()
+  if (event.key === 'Escape') {
+    closeNotifications()
+    if (!shortcutBlocked(event.target) && !elements.composerFields.hidden) setComposerOpen(false)
+    return
+  }
+  if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey || shortcutBlocked(event.target)) return
+  event.preventDefault()
+  showPanel('feed')
+  elements.searchInput.focus()
 })
 
 elements.loginButton.addEventListener('click', async () => {
@@ -1572,9 +1822,17 @@ elements.themeToggles.forEach((button) => button.addEventListener('click', toggl
 
 elements.panelLinks.forEach((link) => {
   link.addEventListener('click', () => {
-    if (link.dataset.panel === 'feed' && targetPostId()) {
+    if (link.dataset.panel === 'feed') {
+      detailOrigin = null
+      if (targetPostId()) setTargetPostUrl(null)
+      showPanel('feed')
+      renderFeed(new Set())
+      window.scrollTo({ top: 0 })
+      return
+    }
+    if (targetPostId()) {
+      detailOrigin = null
       setTargetPostUrl(null)
-      renderFeed(openPostIds())
     }
     showPanel(link.dataset.panel)
     if (link.dataset.panel === 'likes') renderLikes()
@@ -1583,6 +1841,7 @@ elements.panelLinks.forEach((link) => {
 
 elements.searchInput.addEventListener('input', () => {
   searchQuery = elements.searchInput.value
+  detailOrigin = null
   if (targetPostId()) setTargetPostUrl(null)
   // 只有讨论广场里有可搜的东西，所以搜索时把人带回那一栏
   showPanel('feed')
@@ -1638,10 +1897,24 @@ function composerDraftLabel() {
   return excerptPlain(elements.postBody.value, 24)
 }
 
+const DEFAULT_POST_BODY_PLACEHOLDER = elements.postBody.placeholder
+
+function composerPrompt() {
+  return isLateNight() ? '这么晚还在想这件事？' : '最近遇到什么事了？'
+}
+
+function applyComposerPrompt() {
+  const late = isLateNight()
+  elements.composerHeading.textContent = composerPrompt()
+  elements.postBody.placeholder = late
+    ? '先写下来。背景、考虑过的选项、真正卡住的地方，想到哪写到哪——醒来也许就有人回了。'
+    : DEFAULT_POST_BODY_PLACEHOLDER
+}
+
 function updateComposerToggle() {
   const draft = composerHasDraft()
   const anonymous = elements.postAnonymous.checked
-  elements.composerToggleLabel.textContent = draft ? composerDraftLabel() : '最近遇到什么事了？'
+  elements.composerToggleLabel.textContent = draft ? composerDraftLabel() : composerPrompt()
   elements.composerHint.textContent = draft ? '继续编辑' : anonymous ? '匿名发布' : '实名发布'
   elements.composerToggle.classList.toggle('has-draft', draft)
   elements.composerToggle.setAttribute(
@@ -1661,6 +1934,7 @@ function setComposerOpen(open, { focus = true } = {}) {
   elements.composerToggle.setAttribute('aria-expanded', String(open))
   elements.composerFields.hidden = !open
   if (open) {
+    applyComposerPrompt()
     if (focus) elements.postTitle.focus()
     return
   }
@@ -1680,6 +1954,7 @@ elements.postForm.addEventListener('keydown', (event) => {
   event.preventDefault()
   setComposerOpen(false)
 })
+submitOnCommandEnter(elements.postForm)
 
 elements.postForm.addEventListener('submit', async (event) => {
   event.preventDefault()
