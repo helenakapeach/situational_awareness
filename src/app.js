@@ -2,6 +2,8 @@ import './styles.css'
 import { createBackend } from './backend.js'
 import {
   LIMITS,
+  anonymousPersona,
+  assignAnonymousPersonas,
   displayAvatarUrl,
   displayName,
   excerptPlain,
@@ -17,6 +19,7 @@ import {
   GRADUATION_YEAR_MIN,
   graduationLabel,
   ROLES,
+  linkedInDisplayValue,
   roleLabel,
   unreadReplyCount,
   validateFeedback,
@@ -37,7 +40,9 @@ const elements = {
   confirmBody: document.querySelector('#confirm-body'),
   confirmCancel: document.querySelector('#confirm-cancel'),
   confirmDialog: document.querySelector('#confirm-dialog'),
+  backToTop: document.querySelector('#back-to-top'),
   confirmTitle: document.querySelector('#confirm-title'),
+  composerClose: document.querySelector('#composer-close'),
   demoBanner: document.querySelector('#demo-banner'),
   feed: document.querySelector('#feed'),
   feedHeadingRow: document.querySelector('.feed-heading-row'),
@@ -53,6 +58,8 @@ const elements = {
   inviteForm: document.querySelector('#invite-form'),
   inviteSignoutButton: document.querySelector('#invite-signout-button'),
   inviteView: document.querySelector('#invite-view'),
+  likesList: document.querySelector('#likes-list'),
+  likesStatus: document.querySelector('#likes-status'),
   loadMoreButton: document.querySelector('#load-more-button'),
   loadMoreRow: document.querySelector('.load-more-row'),
   loading: document.querySelector('#loading-view'),
@@ -260,6 +267,7 @@ function isWechatBrowser() {
 // 回复框和编辑框都是 renderFeed 现搭的，任何一次重绘都会把它们连同里面
 // 没提交的字一起扔掉。草稿存在 DOM 之外，重绘后再填回去。
 const replyDrafts = new Map()
+const threadPersonas = new Map()
 const collapsedReplyThreads = new Set()
 const editDrafts = new Map()
 const postEditDrafts = new Map()
@@ -385,7 +393,24 @@ function makeMarkdownBody(className, source) {
   return body
 }
 
-function makeAvatar(name, avatarUrl, anonymous = false, onOpen = null) {
+function personaFor(id) {
+  return threadPersonas.get(String(id)) || anonymousPersona(id)
+}
+
+function rememberThreadPersonas(post) {
+  const anonymousIds = [
+    ...(post.is_anonymous ? [{ id: `post-${post.id}`, created_at: post.created_at }] : []),
+    ...post.replies
+      .filter((reply) => reply.is_anonymous)
+      .map((reply) => ({ id: `reply-${reply.id}`, created_at: reply.created_at })),
+  ]
+    .sort((left, right) => new Date(left.created_at) - new Date(right.created_at))
+    .map((item) => item.id)
+  for (const [id, persona] of assignAnonymousPersonas(anonymousIds)) threadPersonas.set(id, persona)
+}
+
+function makeAvatar(name, avatarUrl, anonymous = false, onOpen = null, personaId = null) {
+  const persona = anonymous ? personaFor(personaId) : null
   const wrapper = element(onOpen ? 'button' : 'div', anonymous ? 'avatar anonymous' : 'avatar')
   if (onOpen) {
     wrapper.type = 'button'
@@ -395,8 +420,8 @@ function makeAvatar(name, avatarUrl, anonymous = false, onOpen = null) {
     wrapper.setAttribute('aria-hidden', 'true')
   }
 
-  if (anonymous) {
-    wrapper.textContent = '?'
+  if (persona) {
+    wrapper.textContent = persona.emoji
     return wrapper
   }
 
@@ -413,23 +438,38 @@ function makeAvatar(name, avatarUrl, anonymous = false, onOpen = null) {
   return wrapper
 }
 
-function makeReply(reply, { highlighted = false, replyMap = new Map() } = {}) {
+function makeReply(reply, { highlighted = false, replyMap = new Map(), threadRootId = null } = {}) {
   const draftKey = String(reply.id)
   const anonymous = Boolean(reply.is_anonymous)
   const item = element('li', highlighted ? 'reply is-insight' : 'reply')
   item.id = `comment-${reply.id}`
-  item.append(makeAvatar(
+  const main = element('div', 'reply-main')
+  main.append(makeAvatar(
     reply.author_name,
     reply.author_avatar_url,
     anonymous,
     linkableProfile(reply, anonymous),
+    `reply-${reply.id}`,
   ))
 
   const content = element('div', 'reply-content')
   const who = element('div')
-  who.append(makeAuthorName(reply.author_name, reply.author_public_id, anonymous, 'reply-name'))
+  who.append(makeAuthorName(reply.author_name, reply.author_public_id, anonymous, 'reply-name', `reply-${reply.id}`))
   const byline = element('div', 'reply-byline')
   byline.append(element('time', 'reply-time', formatRelativeTime(reply.created_at)))
+  const parent = replyMap.get(String(reply.parent_reply_id))
+  if (parent && String(parent.id) !== String(threadRootId)) {
+    const parentName = parent.is_anonymous ? personaFor(`reply-${parent.id}`).name : parent.author_name || 'Google 用户'
+    const mention = element('a', 'reply-mention', `回复 ${parentName}`)
+    mention.href = `#comment-${parent.id}`
+    mention.addEventListener('click', event => {
+      event.preventDefault()
+      const target = document.getElementById(`comment-${parent.id}`)
+      target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      target?.focus({ preventScroll: true })
+    })
+    byline.append(mention)
+  }
   const replyRole = anonymous ? null : makeRoleTag(reply.author_role, reply.author_cohort_name, reply.author_role_verified)
   if (replyRole) byline.append(replyRole)
   if (reply.updated_at) byline.append(element('span', 'reply-edited', '已编辑'))
@@ -445,20 +485,10 @@ function makeReply(reply, { highlighted = false, replyMap = new Map() } = {}) {
   })
 
   content.append(who)
-  const parent = replyMap.get(String(reply.parent_reply_id))
-  if (parent) {
-    const context = element('a', 'reply-context', `回复 ${parent.is_anonymous ? '匿名成员' : parent.author_name || 'Google 用户'}：${excerptPlain(parent.body, 42)}`)
-    context.href = `#comment-${parent.id}`
-    context.addEventListener('click', event => {
-      event.preventDefault()
-      const target = document.getElementById(`comment-${parent.id}`)
-      target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      target?.focus({ preventScroll: true })
-    })
-    content.append(context)
-  }
   item.tabIndex = -1
   content.append(body, toolbar)
+  main.append(content)
+  item.append(main)
   const responseKey = `${reply.post_id}:${reply.id}`
   function openResponse(focus = true) {
     let form = content.querySelector(':scope > .nested-reply-form')
@@ -470,8 +500,6 @@ function makeReply(reply, { highlighted = false, replyMap = new Map() } = {}) {
   }
   respond.addEventListener('click', () => openResponse())
   if (replyDrafts.has(responseKey)) openResponse(false)
-  item.append(content)
-
   function showView() {
     editDrafts.delete(draftKey)
     body.hidden = false
@@ -607,6 +635,14 @@ function makeThumbsUpIcon() {
   svg.setAttribute('aria-hidden', 'true')
   svg.innerHTML =
     '<path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/>'
+  return svg
+}
+
+function makeShareIcon() {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  svg.setAttribute('viewBox', '0 0 24 24')
+  svg.setAttribute('aria-hidden', 'true')
+  svg.innerHTML = '<path d="M12 3v12"/><path d="m16 7-4-4-4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/>'
   return svg
 }
 
@@ -804,7 +840,7 @@ function namedRepliers(replies, limit = 4) {
 
 function makeInsightPreview(reply) {
   const preview = element('div', 'insight-preview')
-  const who = reply.is_anonymous ? '匿名成员' : reply.author_name || '成员'
+  const who = reply.is_anonymous ? personaFor(`reply-${reply.id}`).name : reply.author_name || '成员'
   const byline = element('span', 'insight-preview-who')
   byline.append(element('span', 'insight-preview-mark', '高赞'), element('span', '', who))
   const insightRole = reply.is_anonymous
@@ -854,6 +890,7 @@ function forgetPostDrafts(post) {
 }
 
 function makePost(post, shouldOpen = false, { detail = false } = {}) {
+  rememberThreadPersonas(post)
   const article = element('article', 'post-card')
   article.id = `post-${post.id}`
   const draftKey = String(post.id)
@@ -865,10 +902,11 @@ function makePost(post, shouldOpen = false, { detail = false } = {}) {
     post.author_avatar_url,
     anonymous,
     linkableProfile(post, anonymous),
+    `post-${post.id}`,
   ))
   const meta = element('div', 'post-meta')
   meta.append(
-    makeAuthorName(post.author_name, post.author_public_id, anonymous, 'post-author'),
+    makeAuthorName(post.author_name, post.author_public_id, anonymous, 'post-author', `post-${post.id}`),
     element('time', 'post-time', formatRelativeTime(post.created_at)),
   )
   const postRole = anonymous ? null : makeRoleTag(post.author_role, post.author_cohort_name, post.author_role_verified)
@@ -891,7 +929,7 @@ function makePost(post, shouldOpen = false, { detail = false } = {}) {
     })
     title.append(titleLink)
   }
-  heading.append(title, makePostVoteButton(post))
+  heading.append(title)
   const body = makeMarkdownBody('post-body', post.body)
 
   // 有草稿却折叠起来，等于把它藏没了
@@ -931,7 +969,7 @@ function makePost(post, shouldOpen = false, { detail = false } = {}) {
     const replyMap = new Map(post.replies.map(reply => [String(reply.id), reply]))
     groupReplyThreads(post.replies).forEach(({ root, children }, index) => {
       const highlighted = index === 0 && Number(root.upvote_count) > 0
-      const item = makeReply(root, { highlighted, replyMap })
+      const item = makeReply(root, { highlighted, replyMap, threadRootId: root.id })
       if (children.length) {
         const conversation = element('details', 'reply-conversation')
         const key = String(root.id)
@@ -939,13 +977,13 @@ function makePost(post, shouldOpen = false, { detail = false } = {}) {
           replyDrafts.has(`${post.id}:${reply.id}`) || editDrafts.has(String(reply.id)))
         const summary = element('summary', 'reply-conversation-toggle', `${children.length} 条跟帖`)
         const nested = element('ol', 'nested-replies')
-        children.forEach(reply => nested.append(makeReply(reply, { replyMap })))
+        children.forEach(reply => nested.append(makeReply(reply, { replyMap, threadRootId: root.id })))
         conversation.append(summary, nested)
         conversation.addEventListener('toggle', () => {
           if (conversation.open) collapsedReplyThreads.delete(key)
           else collapsedReplyThreads.add(key)
         })
-        item.querySelector('.reply-content').append(conversation)
+        item.append(conversation)
       }
       replies.append(item)
     })
@@ -969,9 +1007,11 @@ function makePost(post, shouldOpen = false, { detail = false } = {}) {
     }
   })
 
-  const share = element('button', 'text-button post-share', '复制链接')
+  const share = element('button', 'post-share')
   share.type = 'button'
-  share.setAttribute('aria-label', `复制讨论链接：${post.title}`)
+  share.title = '转发'
+  share.append(makeShareIcon())
+  share.setAttribute('aria-label', `转发：复制讨论链接 ${post.title}`)
   share.addEventListener('click', async () => {
     const url = postUrl(window.location.href, post.id)
     try {
@@ -985,9 +1025,11 @@ function makePost(post, shouldOpen = false, { detail = false } = {}) {
   const topReply = post.replies[0]
   const insight = topReply && Number(topReply.upvote_count) > 0 ? topReply : null
   const insightEl = insight ? makeInsightPreview(insight) : null
+  const actions = element('div', 'post-actions')
+  actions.append(makePostVoteButton(post), share)
   const engage = element('div', 'post-engage')
-  if (detail) engage.append(share)
-  else engage.append(toggle, share)
+  if (!detail) engage.append(toggle)
+  engage.append(actions)
   article.append(header, heading, body)
   if (insightEl && !detail) article.append(insightEl)
   article.append(engage, panel)
@@ -1121,6 +1163,94 @@ function makePost(post, shouldOpen = false, { detail = false } = {}) {
   if (!detail) requestAnimationFrame(() => setupCollapsibleBody(body))
   return article
 }
+
+function likedAuthorLabel(item, kind) {
+  if (!item.is_anonymous) return item.author_name || '成员'
+  return personaFor(`${kind}-${item.id}`).name
+}
+
+async function openLikedItem(postId, replyId) {
+  setTargetPostUrl(postId)
+  showPanel('feed')
+  if (!cachedPosts.some((post) => String(post.id) === String(postId))) await loadPosts()
+  else renderFeed()
+  if (!replyId) {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+    return
+  }
+  requestAnimationFrame(() => {
+    document.getElementById(`comment-${replyId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  })
+}
+
+function renderLikeGroup(title, items, emptyText, onItem) {
+  const group = element('section', 'like-group')
+  group.append(element('h2', '', title))
+  if (!items.length) {
+    group.append(element('p', 'profile-empty', emptyText))
+    return group
+  }
+  const list = element('div', 'like-list')
+  for (const item of items) {
+    const button = element('button', 'like-item')
+    button.type = 'button'
+    const heading = element('span', 'like-title', item.heading)
+    const meta = element('span', 'like-meta', item.meta)
+    button.append(heading, meta)
+    button.addEventListener('click', () => onItem(item))
+    list.append(button)
+  }
+  group.append(list)
+  return group
+}
+
+async function renderLikes() {
+  elements.likesStatus.hidden = false
+  elements.likesStatus.textContent = '正在加载…'
+  elements.likesStatus.classList.remove('error')
+  elements.likesList.replaceChildren()
+  try {
+    const liked = await backend.listLiked()
+    elements.likesStatus.hidden = true
+    elements.likesList.replaceChildren(
+      renderLikeGroup(
+        '话题',
+        liked.posts.map((post) => ({
+          ...post,
+          heading: post.title,
+          meta: `${likedAuthorLabel(post, 'post')} · ${formatRelativeTime(post.created_at)}`,
+        })),
+        '还没有赞过的话题。',
+        (post) => openLikedItem(post.id),
+      ),
+      renderLikeGroup(
+        '回答',
+        liked.replies.map((reply) => ({
+          ...reply,
+          heading: excerptPlain(reply.body, 80),
+          meta: `${likedAuthorLabel(reply, 'reply')} · 在「${reply.post_title}」下 · ${formatRelativeTime(reply.created_at)}`,
+        })),
+        '还没有赞过的回答。',
+        (reply) => openLikedItem(reply.post_id, reply.id),
+      ),
+    )
+  } catch (error) {
+    elements.likesStatus.hidden = false
+    elements.likesStatus.classList.add('error')
+    elements.likesStatus.textContent = friendlyError(error)
+  }
+}
+
+function syncBackToTop() {
+  const scrolled = window.scrollY || document.documentElement.scrollTop
+  const visible = !elements.app.hidden && scrolled > 80
+  elements.backToTop.classList.toggle('is-visible', visible)
+}
+
+window.addEventListener('scroll', syncBackToTop, { passive: true })
+elements.backToTop.addEventListener('click', () => {
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+})
 
 function openPostIds() {
   return new Set(
@@ -1447,6 +1577,7 @@ elements.panelLinks.forEach((link) => {
       renderFeed(openPostIds())
     }
     showPanel(link.dataset.panel)
+    if (link.dataset.panel === 'likes') renderLikes()
   })
 })
 
@@ -1538,6 +1669,7 @@ function setComposerOpen(open, { focus = true } = {}) {
 }
 
 elements.composerToggle.addEventListener('click', () => setComposerOpen(true))
+elements.composerClose.addEventListener('click', () => setComposerOpen(false))
 elements.postTitle.addEventListener('input', updateComposerToggle)
 elements.postBody.addEventListener('input', updateComposerToggle)
 elements.postAnonymous.addEventListener('change', updatePostIdentity)
@@ -1659,8 +1791,8 @@ function linkableProfile(item, anonymous) {
   return () => showProfile(item.author_public_id)
 }
 
-function makeAuthorName(name, publicId, anonymous, className) {
-  const label = anonymous ? '匿名成员' : name || '成员'
+function makeAuthorName(name, publicId, anonymous, className, personaId = null) {
+  const label = anonymous ? personaFor(personaId).name : name || '成员'
   if (anonymous || !publicId) return element('strong', className, label)
   const button = element('button', `author-link ${className}`)
   button.type = 'button'
@@ -1743,27 +1875,61 @@ function profileAvatarBlock(profile) {
   return block
 }
 
-function appendContact(list, label, ...nodes) {
-  const dd = element('dd')
-  dd.append(...nodes)
-  list.append(element('dt', '', label), dd)
+const CONTACT_ICONS = {
+  linkedin: {
+    filled: true,
+    body: '<path d="M20.45 20.45h-3.55v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13ZM7.12 20.45H3.56V9h3.56v11.45ZM22.23 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"/>',
+  },
+  mail: {
+    body: '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>',
+  },
+  wechat: {
+    body: '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>',
+  },
+}
+
+function makeContactIcon(name) {
+  const icon = CONTACT_ICONS[name]
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  svg.setAttribute('viewBox', '0 0 24 24')
+  svg.setAttribute('aria-hidden', 'true')
+  if (icon.filled) {
+    svg.setAttribute('fill', 'currentColor')
+  } else {
+    svg.setAttribute('fill', 'none')
+    svg.setAttribute('stroke', 'currentColor')
+    svg.setAttribute('stroke-width', '2')
+    svg.setAttribute('stroke-linecap', 'round')
+    svg.setAttribute('stroke-linejoin', 'round')
+  }
+  svg.innerHTML = icon.body
+  return svg
+}
+
+function makeContactChip(tag, icon, label, text) {
+  const chip = element(tag, text ? 'contact-chip' : 'contact-chip icon-only')
+  chip.append(makeContactIcon(icon))
+  if (text) chip.append(element('span', '', text))
+  chip.title = label
+  chip.setAttribute('aria-label', label)
+  return chip
 }
 
 function appendPublicContacts(list, profile) {
   if (profile.linkedin_url && validLinkedInUrl(profile.linkedin_url)) {
-    const link = element('a', '', '打开 LinkedIn')
+    const link = makeContactChip('a', 'linkedin', 'LinkedIn 主页')
     link.href = profile.linkedin_url
     link.target = '_blank'
     link.rel = 'noopener noreferrer'
-    appendContact(list, 'LinkedIn', link)
+    list.append(link)
   }
   if (profile.contact_email && validContactEmail(profile.contact_email)) {
-    const link = element('a', '', profile.contact_email)
+    const link = makeContactChip('a', 'mail', `发邮件给 ${profile.contact_email}`, profile.contact_email)
     link.href = `mailto:${profile.contact_email}`
-    appendContact(list, '邮箱', link)
+    list.append(link)
   }
   if (profile.wechat_id) {
-    const copy = element('button', 'text-button', '复制微信号')
+    const copy = makeContactChip('button', 'wechat', `复制微信号 ${profile.wechat_id}`, profile.wechat_id)
     copy.type = 'button'
     copy.addEventListener('click', async () => {
       try {
@@ -1773,28 +1939,33 @@ function appendPublicContacts(list, profile) {
         showToast(`复制失败，微信号是 ${profile.wechat_id}`)
       }
     })
-    appendContact(list, '微信', element('span', '', profile.wechat_id), copy)
+    list.append(copy)
   }
 }
 
 function buildProfileSummary(profile) {
-  const card = element('div')
+  const card = element('div', 'profile-summary')
   const head = element('div', 'profile-head')
-  const identity = element('div')
+  const identity = element('div', 'profile-identity')
   identity.append(element('h2', 'profile-name', profile.display_name || '成员'))
   if (profile.tagline) identity.append(element('p', 'profile-tagline', profile.tagline))
   const tag = makeRoleTag(profile.role, profile.cohort_name, profile.role_verified)
-  if (tag) identity.append(tag)
   const yearText = graduationLabel(profile.graduation_year)
-  if (yearText) identity.append(element('p', 'profile-note', yearText))
+  if (tag || yearText) {
+    const meta = element('p', 'profile-meta')
+    if (tag) meta.append(tag)
+    if (yearText) meta.append(element('span', 'profile-year', yearText))
+    identity.append(meta)
+  }
   head.append(makeAvatar(profile.display_name, profile.avatar_url), identity)
   card.append(head)
 
   if (profile.bio) card.append(makeMarkdownBody('profile-bio', profile.bio))
 
-  const contacts = element('dl', 'profile-contacts')
+  const contacts = element('div', 'profile-contacts')
   appendPublicContacts(contacts, profile)
-  card.append(contacts.childElementCount ? contacts : element('p', 'profile-empty', '没有公开联系方式。'))
+  if (!contacts.childElementCount) contacts.append(element('p', 'profile-empty', '没有公开联系方式。'))
+  card.append(contacts)
   return card
 }
 
@@ -1847,8 +2018,8 @@ function buildProfileForm() {
   cohort.addEventListener('change', syncRole)
   syncRole()
 
-  const linkedin = textInput('profile-linkedin-input', profile.linkedin_url, 160)
-  linkedin.placeholder = 'https://www.linkedin.com/in/…'
+  const linkedin = textInput('profile-linkedin-input', linkedInDisplayValue(profile.linkedin_url), 160)
+  linkedin.placeholder = 'www.linkedin.com/in/…'
   linkedin.inputMode = 'url'
   const linkedinPublic = publicToggle(linkedin, profile.linkedin_public)
 
@@ -2001,13 +2172,15 @@ async function showProfile(publicId) {
     }
     const summary = buildProfileSummary(profile)
     if (profile.is_self) {
-      const edit = element('button', 'secondary-button profile-edit', '编辑资料')
+      const edit = element('button', 'secondary-button', '编辑资料')
       edit.type = 'button'
       edit.addEventListener('click', () => {
         dialog.close()
         showPanel('me')
       })
-      summary.append(edit)
+      const actions = element('div', 'profile-actions')
+      actions.append(edit)
+      summary.append(actions)
     }
     card.replaceChildren(summary)
   } catch (error) {

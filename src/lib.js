@@ -171,6 +171,51 @@ export function roleLabel(role, cohortName = '') {
   return label
 }
 
+const ANONYMOUS_PERSONAS = [
+  { name: '小水獭', emoji: '🦦' },
+  { name: '小狐狸', emoji: '🦊' },
+  { name: '小熊猫', emoji: '🐼' },
+  { name: '小企鹅', emoji: '🐧' },
+  { name: '小考拉', emoji: '🐨' },
+  { name: '小兔子', emoji: '🐰' },
+  { name: '小浣熊', emoji: '🦝' },
+  { name: '小海豚', emoji: '🐬' },
+  { name: '小柴犬', emoji: '🐶' },
+  { name: '小刺猬', emoji: '🦔' },
+  { name: '小树懒', emoji: '🦥' },
+  { name: '小羊驼', emoji: '🦙' },
+  { name: '小海豹', emoji: '🦭' },
+  { name: '小松鼠', emoji: '🐿️' },
+  { name: '小仓鼠', emoji: '🐹' },
+  { name: '小麋鹿', emoji: '🦌' },
+]
+
+function personaIndex(id) {
+  const text = String(id ?? '')
+  let hash = 0
+  for (const char of text) hash = (Math.imul(hash, 31) + char.codePointAt(0)) >>> 0
+  return hash % ANONYMOUS_PERSONAS.length
+}
+
+export function anonymousPersona(id) {
+  return ANONYMOUS_PERSONAS[personaIndex(id)]
+}
+
+// Two different anonymous people in one thread must not share an animal,
+// or readers will take them for the same person.
+export function assignAnonymousPersonas(ids) {
+  const used = new Set()
+  const assigned = new Map()
+  for (const id of ids) {
+    if (used.size === ANONYMOUS_PERSONAS.length) used.clear()
+    let index = personaIndex(id)
+    while (used.has(index)) index = (index + 1) % ANONYMOUS_PERSONAS.length
+    used.add(index)
+    assigned.set(String(id), ANONYMOUS_PERSONAS[index])
+  }
+  return assigned
+}
+
 export function graduationLabel(year) {
   const value = Number(year)
   if (!Number.isInteger(value) || value < GRADUATION_YEAR_MIN || value > GRADUATION_YEAR_MAX) return ''
@@ -199,9 +244,9 @@ export function validateProfile(input) {
     return { ok: false, message: '自我介绍不能超过 500 个字。' }
   }
 
-  const linkedin = normalizeText(input?.linkedin_url)
+  const linkedin = normalizeLinkedInUrl(input?.linkedin_url)
   if (linkedin && !LINKEDIN_URL.test(linkedin)) {
-    return { ok: false, message: 'LinkedIn 请填写 https://www.linkedin.com/in/… 形式的链接。' }
+    return { ok: false, message: 'LinkedIn 请填写 www.linkedin.com/in/… 形式的链接。' }
   }
 
   const email = normalizeText(input?.contact_email).toLowerCase()
@@ -250,6 +295,16 @@ export function validateProfile(input) {
 
 export function validLinkedInUrl(value) {
   return LINKEDIN_URL.test(normalizeText(value))
+}
+
+function normalizeLinkedInUrl(value) {
+  const text = normalizeText(value)
+  if (!text) return ''
+  return `https://${text.replace(/^https?:\/\//i, '')}`
+}
+
+export function linkedInDisplayValue(value) {
+  return normalizeText(value).replace(/^https?:\/\//i, '')
 }
 
 export function validContactEmail(value) {
