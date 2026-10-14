@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  anonymousPersona,
+  assignAnonymousPersonas,
   displayAvatarUrl,
   displayName,
   excerptPlain,
@@ -105,10 +107,42 @@ test('profile validation accepts a complete card and rejects bad contact details
   assert.equal(validateProfile({ display_name: '好', role: 'committee', cohort_id: 1 }).value.cohort_id, null)
   assert.equal(validateProfile({ display_name: '' }).ok, false)
   assert.equal(validateProfile({ display_name: '好', linkedin_url: 'https://evil.example/in/lin' }).ok, false)
+  assert.equal(validateProfile({ display_name: '好', linkedin_url: 'www.evil.example/in/lin' }).ok, false)
+  assert.equal(
+    validateProfile({ display_name: '好', linkedin_url: ' www.linkedin.com/in/example-lin ' }).value.linkedin_url,
+    'https://www.linkedin.com/in/example-lin',
+  )
+  assert.equal(
+    validateProfile({ display_name: '好', linkedin_url: 'http://linkedin.com/in/example-lin' }).value.linkedin_url,
+    'https://linkedin.com/in/example-lin',
+  )
   assert.equal(validateProfile({ display_name: '好', contact_email: 'not-an-email' }).ok, false)
   assert.equal(validateProfile({ display_name: '好', wechat_id: '12bad' }).ok, false)
   assert.equal(validateProfile({ display_name: '好', role: 'staff' }).ok, false)
   assert.equal(validateProfile({ display_name: '好', role: 'mentor', cohort_id: 4 }).value.cohort_id, null)
+})
+
+test('anonymous personas stay on the content and not the person', () => {
+  const first = anonymousPersona('post-2')
+  assert.deepEqual(anonymousPersona('post-2'), first)
+  assert.notEqual(anonymousPersona('reply-1').name, anonymousPersona('user-secret').name)
+  const seen = new Set()
+  for (let id = 1; id <= 32; id += 1) {
+    const persona = anonymousPersona(id)
+    assert.match(persona.name, /^小/)
+    assert.ok(persona.emoji)
+    seen.add(persona.name)
+  }
+  assert.ok(seen.size >= 10)
+})
+
+test('one thread never gives two anonymous people the same animal', () => {
+  const ids = Array.from({ length: 16 }, (_, index) => `reply-${index + 1}`)
+  const assigned = assignAnonymousPersonas(ids)
+  assert.equal(new Set([...assigned.values()].map((persona) => persona.name)).size, 16)
+  assert.deepEqual(assignAnonymousPersonas(ids), assigned)
+  assert.equal(assignAnonymousPersonas(['post-9']).get('post-9'), anonymousPersona('post-9'))
+  assert.equal(assignAnonymousPersonas([...ids, 'reply-99']).size, 17)
 })
 
 test('role labels and avatar urls stay inside the profile rules', () => {

@@ -711,6 +711,10 @@ textarea::placeholder {
   justify-content: flex-end;
 }
 
+#composer-close {
+  flex: none;
+}
+
 .reply-meta {
   display: flex;
   min-width: 0;
@@ -879,7 +883,7 @@ textarea::placeholder {
 }
 
 .post-header,
-.reply {
+.reply-main {
   display: flex;
   align-items: flex-start;
   gap: 11px;
@@ -900,10 +904,11 @@ textarea::placeholder {
 }
 
 .avatar.anonymous {
-  color: var(--text-faint);
   background: var(--surface-sunken);
   border: 1px solid var(--border);
-  font-size: 16px;
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1;
 }
 
 .avatar img {
@@ -937,10 +942,7 @@ textarea::placeholder {
 }
 
 .post-heading {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin: 18px 0 8px;
+  margin: 16px 0 8px;
 }
 
 .post-title {
@@ -1136,15 +1138,58 @@ textarea::placeholder {
 .post-engage {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  margin-top: 20px;
-  padding-top: 13px;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 10px;
   border-top: 1px solid var(--border-soft);
 }
 
-.post-share {
+.post-actions {
+  display: flex;
   flex: none;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.post-actions .vote-button.is-question {
+  min-height: 32px;
+  padding: 0 8px 0 6px;
+}
+
+.post-share {
+  display: grid;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  padding: 0;
+  color: var(--text-faint);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.post-share:hover,
+.post-share:focus-visible {
+  color: var(--brand);
+  background: var(--brand-tint);
+}
+
+.post-share:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.post-share svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentcolor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
 }
 
 .thread-toggle {
@@ -1207,14 +1252,17 @@ textarea::placeholder {
   border-top: 0;
 }
 
-/* 高赞回答：琥珀色只标注「这段值得读」，点赞按钮仍是品牌色 */
+/* 高赞回答：琥珀色只罩住这条回复本身，跟帖留在外面 */
 .reply.is-insight {
-  margin: 12px 0 4px;
-  padding: 14px 14px 14px 16px;
-  background: var(--insight-tint);
   border-top: 0;
+}
+
+.reply.is-insight > .reply-main {
+  margin: 12px 0 4px;
+  padding: 14px 14px 12px 16px;
+  background: var(--insight-tint);
   border-left: 3px solid var(--insight);
-  border-radius: 8px;
+  border-radius: 0 8px 8px 0;
 }
 
 .panel-placeholder.is-insight {
@@ -1261,16 +1309,39 @@ textarea::placeholder {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px 12px;
-  margin-top: 12px;
+  gap: 2px;
+  margin-top: 8px;
+}
+
+.reply-toolbar .vote-button {
+  min-height: 32px;
+  padding: 0 8px 0 6px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.reply-toolbar .text-button {
+  min-height: 32px;
+  padding: 0 8px;
+  border-radius: 8px;
+}
+
+.reply-toolbar .text-button:hover,
+.reply-toolbar .text-button:focus-visible {
+  color: var(--brand);
+  background: var(--brand-tint);
+}
+
+.reply-toolbar .text-button.danger:hover,
+.reply-toolbar .text-button.danger:focus-visible {
+  color: var(--risk);
+  background: var(--risk-tint);
 }
 
 .reply-end {
   display: flex;
   align-items: center;
-  gap: 14px;
-  margin-left: auto;
+  gap: 2px;
 }
 
 .reply-own-actions,
@@ -1453,6 +1524,93 @@ textarea::placeholder {
   line-height: 1.7;
 }
 
+.back-to-top {
+  position: fixed;
+  right: 20px;
+  bottom: 24px;
+  z-index: 20;
+  display: none;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  color: var(--text-on-fill);
+  background: var(--brand);
+  border: 0;
+  border-radius: 999px;
+  box-shadow: 0 2px 9px color-mix(in srgb, var(--text) 18%, transparent);
+  cursor: pointer;
+}
+
+.back-to-top.is-visible {
+  display: grid;
+}
+
+.back-to-top:hover,
+.back-to-top:focus-visible {
+  background: var(--brand-hover);
+}
+
+.back-to-top svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentcolor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.like-group {
+  margin-top: 8px;
+}
+
+.like-group + .like-group {
+  margin-top: 28px;
+}
+
+.like-group h2 {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.like-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  padding: 14px 16px;
+  color: inherit;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.like-item + .like-item {
+  margin-top: 8px;
+}
+
+.like-item:hover,
+.like-item:focus-visible {
+  border-color: var(--brand);
+}
+
+.like-title {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.like-meta {
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .toast {
   position: fixed;
   bottom: 24px;
@@ -1570,6 +1728,10 @@ textarea::placeholder {
     flex-direction: column;
   }
 
+  #composer-close {
+    align-self: flex-end;
+  }
+
   .primary-button,
   .secondary-button {
     width: 100%;
@@ -1587,19 +1749,81 @@ textarea::placeholder {
   }
 }
 
-/* Conversations stay at one indentation level on small screens. */
-.reply-conversation { margin-top: 14px; border-left: 2px solid var(--border); padding-left: 14px; }
-.reply-conversation-toggle { cursor: pointer; color: var(--brand); font-size: 13px; padding: 6px 0; }
+/* 跟帖只缩进一层，对齐根回复的正文，不再套第二层引用框。 */
+.reply-conversation {
+  margin: 6px 0 4px 45px;
+  padding-left: 14px;
+  border-left: 2px solid var(--border-soft);
+}
+
+.reply-conversation-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+  color: var(--text-faint);
+  font-size: 13px;
+  font-weight: 650;
+  list-style: none;
+  cursor: pointer;
+}
+
+.reply-conversation-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.reply-conversation-toggle::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 5px solid currentcolor;
+}
+
+.reply-conversation[open] > .reply-conversation-toggle::before {
+  transform: rotate(90deg);
+}
+
+.reply-conversation-toggle:hover {
+  color: var(--brand);
+}
+
 .nested-replies { list-style: none; margin: 0; padding: 0; }
-.nested-replies .reply { padding: 14px 0; }
+
+.nested-replies .reply {
+  padding: 12px 0 4px;
+  border-top: 0;
+}
+
+.nested-replies .reply + .reply {
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.nested-replies .reply-main { gap: 8px; }
 .nested-replies .avatar { width: 28px; height: 28px; font-size: 12px; }
-.reply-context { display: block; color: var(--text-faint); font-size: 12px; margin: 7px 0; padding: 6px 10px; border-left: 2px solid var(--border); text-decoration: none; overflow-wrap: anywhere; }
-.reply-context:hover { color: var(--brand); }
+.nested-replies .avatar.anonymous { font-size: 16px; }
+.nested-replies .reply-name { font-size: 14px; }
+.nested-replies .reply-body { margin-top: 4px; font-size: 14px; }
+
+.reply-mention {
+  color: var(--text-faint);
+  font-size: 12px;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.reply-mention:hover {
+  color: var(--brand);
+}
+
 .reply-target { margin: 0 0 10px; font-size: 12px; color: var(--text-faint); }
 .reply:focus { outline: 2px solid var(--brand); outline-offset: 4px; }
+
 @media (max-width: 600px) {
-  .reply-conversation { padding-left: 8px; }
-  .nested-replies .reply { gap: 8px; }
+  .reply-conversation { margin-left: 18px; padding-left: 10px; }
   .nested-reply-form { padding: 10px; }
 }
 
@@ -1686,30 +1910,134 @@ button.avatar:focus-visible {
   line-height: 1.5;
 }
 
-.profile-bio {
-  margin-top: 16px;
+.profile-summary .profile-head {
+  align-items: flex-start;
+  gap: 16px;
 }
 
-.profile-contacts {
-  margin: 18px 0 0;
+.profile-summary .profile-head .avatar {
+  flex: none;
+  width: 72px;
+  height: 72px;
+  font-size: 22px;
+  box-shadow: 0 0 0 1px var(--border);
 }
 
-.profile-contacts dt {
-  color: var(--text-faint);
-  font-size: 12px;
-  font-weight: 650;
+.profile-identity {
+  min-width: 0;
+  padding-top: 4px;
 }
 
-.profile-contacts dd {
+.modal-dialog .profile-summary .profile-name {
+  margin: 0;
+  font-size: 21px;
+  overflow-wrap: anywhere;
+}
+
+.profile-summary .profile-tagline {
+  margin-top: 2px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.profile-meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  margin: 2px 0 12px;
+  gap: 4px 10px;
+  margin: 8px 0 0;
+  color: var(--text-faint);
+  font-size: 12px;
+  font-weight: 500;
 }
 
-.profile-edit {
-  margin-top: 8px;
+.profile-meta .role-tag {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.profile-bio {
+  margin-top: 18px;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.profile-contacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.profile-contacts .profile-empty {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 13px;
+}
+
+.contact-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  height: 36px;
+  padding: 0 14px 0 12px;
+  color: var(--text-soft);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 120ms, background-color 120ms, border-color 120ms;
+}
+
+.contact-chip:hover,
+.contact-chip:focus-visible {
+  color: var(--brand);
+  background: var(--brand-tint);
+  border-color: color-mix(in srgb, var(--brand) 35%, var(--border));
+}
+
+.contact-chip:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.contact-chip svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+.contact-chip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contact-chip.icon-only {
+  justify-content: center;
+  width: 36px;
+  padding: 0;
+}
+
+.contact-chip.icon-only svg {
+  width: 17px;
+  height: 17px;
+}
+
+.profile-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 22px;
 }
 
 .profile-form select {

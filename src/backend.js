@@ -442,6 +442,31 @@ export function createBackend() {
       }))
     },
 
+    async listLiked() {
+      const [{ data: postVotes, error: postError }, { data: replyVotes, error: replyError }] = await Promise.all([
+        supabase
+          .from('post_votes')
+          .select('posts(id,title,created_at,is_anonymous,author_name)')
+          .limit(100),
+        supabase
+          .from('reply_votes')
+          .select('replies(id,post_id,body,created_at,is_anonymous,author_name,posts(id,title))')
+          .limit(100),
+      ])
+      if (postError) throw postError
+      if (replyError) throw replyError
+
+      const byNewest = (left, right) => new Date(right.created_at) - new Date(left.created_at)
+      return {
+        posts: (postVotes || []).map((vote) => vote.posts).filter(Boolean).sort(byNewest),
+        replies: (replyVotes || [])
+          .map((vote) => vote.replies)
+          .filter((reply) => reply?.posts)
+          .map(({ posts, ...reply }) => ({ ...reply, post_title: posts.title }))
+          .sort(byNewest),
+      }
+    },
+
     async createPost(post) {
       const { error } = await supabase.from('posts').insert(post)
       if (error) throw error
@@ -690,6 +715,45 @@ function createDemoBackend() {
             ),
           }
         })
+    },
+
+    async listLiked() {
+      const data = readData()
+      const likedPostIds = new Set(
+        (data.post_votes || [])
+          .filter((vote) => vote.user_id === demoUser.id)
+          .map((vote) => String(vote.post_id)),
+      )
+      const likedReplyIds = new Set(
+        (data.reply_votes || [])
+          .filter((vote) => vote.user_id === demoUser.id)
+          .map((vote) => String(vote.reply_id)),
+      )
+      const byNewest = (left, right) => new Date(right.created_at) - new Date(left.created_at)
+      return {
+        posts: data.posts
+          .filter((post) => likedPostIds.has(String(post.id)))
+          .map((post) => ({
+            id: post.id,
+            title: post.title,
+            created_at: post.created_at,
+            is_anonymous: post.is_anonymous !== false,
+            author_name: post.author_name,
+          }))
+          .sort(byNewest),
+        replies: data.replies
+          .filter((reply) => likedReplyIds.has(String(reply.id)))
+          .map((reply) => ({
+            id: reply.id,
+            post_id: reply.post_id,
+            body: reply.body,
+            created_at: reply.created_at,
+            is_anonymous: Boolean(reply.is_anonymous),
+            author_name: reply.author_name,
+            post_title: data.posts.find((post) => String(post.id) === String(reply.post_id))?.title || '这条讨论',
+          }))
+          .sort(byNewest),
+      }
     },
 
     async createPost(post) {
