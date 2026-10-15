@@ -65,6 +65,8 @@ const elements = {
   inviteView: document.querySelector('#invite-view'),
   likesList: document.querySelector('#likes-list'),
   likesStatus: document.querySelector('#likes-status'),
+  myContentList: document.querySelector('#my-content-list'),
+  myContentStatus: document.querySelector('#my-content-status'),
   loadMoreButton: document.querySelector('#load-more-button'),
   loadMoreRow: document.querySelector('.load-more-row'),
   loading: document.querySelector('#loading-view'),
@@ -119,7 +121,10 @@ let cachedPosts = []
 let hasMorePosts = false
 let searchQuery = ''
 let detailOrigin = null
-let likesReturnScroll = 0
+let originReturnScroll = 0
+// 服务端搜索结果。键是发起时的搜索词，晚到的旧结果不会盖掉新搜索。
+let searchResults = { query: '', posts: [], loading: false }
+let searchRequest = 0
 let unreadTrackingUserId = null
 let unreadBaselineAt = Date.now()
 let postSeenAt = {}
@@ -482,12 +487,19 @@ function element(tag, className, text) {
   return node
 }
 
+// 悬停提示在触屏上看不到，所以点一下也能在原地切成具体时间。
 function makeTime(className, input) {
-  const node = element('time', className, formatRelativeTime(input))
+  const relative = formatRelativeTime(input)
+  const node = element('time', className, relative)
   const absolute = formatAbsoluteTime(input)
   if (absolute) {
     node.dateTime = new Date(input).toISOString()
     node.title = absolute
+    node.classList.add('is-toggleable')
+    node.addEventListener('click', () => {
+      const showAbsolute = node.textContent === relative
+      node.textContent = showAbsolute ? absolute : relative
+    })
   }
   return node
 }
@@ -783,7 +795,15 @@ function makeShareIcon() {
 }
 
 function rememberVote(target, liked, count) {
-  cachedPosts = cachedPosts.map((post) => {
+  cachedPosts = withRememberedVote(cachedPosts, target, liked, count)
+  searchResults = {
+    ...searchResults,
+    posts: withRememberedVote(searchResults.posts, target, liked, count),
+  }
+}
+
+function withRememberedVote(posts, target, liked, count) {
+  return posts.map((post) => {
     if (target.postId != null && String(post.id) === String(target.postId)) {
       return { ...post, liked_by_me: liked, upvote_count: count }
     }
@@ -1328,26 +1348,34 @@ function backArrowIcon() {
   return svg
 }
 
-function returnToLikes() {
-  const scroll = likesReturnScroll
+const DETAIL_ORIGIN_LABELS = { likes: '返回赞过', me: '返回我的讨论' }
+
+function returnToOrigin() {
+  const origin = detailOrigin
+  const scroll = originReturnScroll
   detailOrigin = null
   setTargetPostUrl(null)
-  showPanel('likes')
+  showPanel(origin)
   window.scrollTo({ top: scroll })
 }
 
 function makeDetailBack() {
-  if (detailOrigin === 'likes') {
+  const label = DETAIL_ORIGIN_LABELS[detailOrigin]
+  if (label) {
     const back = element('button', 'icon-button post-detail-back')
     back.type = 'button'
-    back.setAttribute('aria-label', '返回赞过')
+    back.setAttribute('aria-label', label)
+    back.title = label
     back.append(backArrowIcon())
-    back.addEventListener('click', returnToLikes)
+    back.addEventListener('click', returnToOrigin)
     return back
   }
 
-  const back = element('a', 'text-button post-detail-back', '← 返回讨论广场')
+  const back = element('a', 'icon-button post-detail-back')
   back.href = postUrl(window.location.href)
+  back.setAttribute('aria-label', '返回讨论广场')
+  back.title = '返回讨论广场'
+  back.append(backArrowIcon())
   back.addEventListener('click', () => {
     detailOrigin = null
     clearStoredTargetPost()
@@ -1355,9 +1383,9 @@ function makeDetailBack() {
   return back
 }
 
-async function openLikedItem(postId, replyId) {
-  likesReturnScroll = window.scrollY || document.documentElement.scrollTop
-  detailOrigin = 'likes'
+async function openFromPanel(origin, postId, replyId) {
+  originReturnScroll = window.scrollY || document.documentElement.scrollTop
+  detailOrigin = origin
   setTargetPostUrl(postId)
   showPanel('feed')
   if (!cachedPosts.some((post) => String(post.id) === String(postId))) await loadPosts()
@@ -1409,7 +1437,7 @@ async function renderLikes() {
           meta: `${likedAuthorLabel(post, 'post')} · ${formatRelativeTime(post.created_at)}`,
         })),
         '还没有赞过的话题。',
-        (post) => openLikedItem(post.id),
+        (post) => openFromPanel('likes', post.id),
       ),
       renderLikeGroup(
         '回答',
@@ -1419,13 +1447,54 @@ async function renderLikes() {
           meta: `${likedAuthorLabel(reply, 'reply')} · 在「${reply.post_title}」下 · ${formatRelativeTime(reply.created_at)}`,
         })),
         '还没有赞过的回答。',
-        (reply) => openLikedItem(reply.post_id, reply.id),
+        (reply) => openFromPanel('likes', reply.post_id, reply.id),
       ),
     )
   } catch (error) {
     elements.likesStatus.hidden = false
     elements.likesStatus.classList.add('error')
     elements.likesStatus.textContent = friendlyError(error)
+  }
+}
+
+function identityLabel(item) {
+  return item.is_anonymous ? '匿名' : '实名'
+}
+
+async function renderMyContent() {
+  elements.myContentStatus.hidden = false
+  elements.myContentStatus.textContent = '正在加载…'
+  elements.myContentStatus.classList.remove('error')
+  elements.myContentList.replaceChildren()
+  try {
+    const mine = await backend.listMine()
+    elements.myContentStatus.hidden = true
+    elements.myContentList.replaceChildren(
+      renderLikeGroup(
+        '我发过的',
+        mine.posts.map((post) => ({
+          ...post,
+          heading: post.title,
+          meta: `${identityLabel(post)} · ${formatRelativeTime(post.created_at)}`,
+        })),
+        '还没有发过讨论。',
+        (post) => openFromPanel('me', post.id),
+      ),
+      renderLikeGroup(
+        '我回过的',
+        mine.replies.map((reply) => ({
+          ...reply,
+          heading: excerptPlain(reply.body, 80),
+          meta: `${identityLabel(reply)} · 在「${reply.post_title}」下 · ${formatRelativeTime(reply.created_at)}`,
+        })),
+        '还没有回过别人。',
+        (reply) => openFromPanel('me', reply.post_id, reply.id),
+      ),
+    )
+  } catch (error) {
+    elements.myContentStatus.hidden = false
+    elements.myContentStatus.classList.add('error')
+    elements.myContentStatus.textContent = friendlyError(error)
   }
 }
 
@@ -1476,6 +1545,20 @@ function openPostIds() {
   )
 }
 
+// 已加载的帖子优先用本地那份（点赞、回复都是最新的），服务端只补更早的。
+function searchMatches(query, serverPosts) {
+  const byId = new Map()
+  for (const post of cachedPosts) {
+    if (post.title.toLowerCase().includes(query) || post.body.toLowerCase().includes(query)) {
+      byId.set(String(post.id), post)
+    }
+  }
+  for (const post of serverPosts) {
+    if (!byId.has(String(post.id))) byId.set(String(post.id), post)
+  }
+  return [...byId.values()].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+}
+
 function renderFeed(previouslyOpen = new Set()) {
   const requestedPost = targetPostId()
   const detailPost = requestedPost
@@ -1511,15 +1594,21 @@ function renderFeed(previouslyOpen = new Set()) {
   }
 
   const query = searchQuery.trim().toLowerCase()
-  const visible = query
-    ? cachedPosts.filter(
-        (post) =>
-          post.title.toLowerCase().includes(query) || post.body.toLowerCase().includes(query),
-      )
-    : cachedPosts
+  const searching = Boolean(query)
+  const serverHits = searching && searchResults.query.toLowerCase() === query ? searchResults : null
+  const visible = searching ? searchMatches(query, serverHits?.posts || []) : cachedPosts
 
   elements.feed.replaceChildren()
-  elements.loadMoreButton.hidden = !hasMorePosts
+  elements.loadMoreButton.hidden = searching || !hasMorePosts
+  if (searching && serverHits?.loading) {
+    elements.feedStatus.hidden = false
+    elements.feedStatus.dataset.search = 'true'
+    elements.feedStatus.classList.remove('error', 'sr-only')
+    elements.feedStatus.textContent = visible.length ? '正在搜索更早的讨论…' : '正在搜索…'
+  } else if (elements.feedStatus.dataset.search) {
+    delete elements.feedStatus.dataset.search
+    elements.feedStatus.hidden = true
+  }
 
   if (visible.length) {
     visible.forEach((post) =>
@@ -1531,17 +1620,13 @@ function renderFeed(previouslyOpen = new Set()) {
     return
   }
 
+  if (searching && serverHits?.loading) return
+
   const empty = element('div', 'panel-placeholder')
   if (query) {
     empty.append(
       element('strong', '', '没有匹配的讨论。'),
-      element(
-        'p',
-        '',
-        hasMorePosts
-          ? '搜索只看已经加载的帖子。换个说法，或者先加载更多。'
-          : '换个说法，或者清空搜索框看全部。',
-      ),
+      element('p', '', '换个说法，或者清空搜索框看全部。'),
     )
   } else {
     empty.append(
@@ -1603,7 +1688,10 @@ async function loadPosts({ preserveOpenPost = null, quiet = false } = {}) {
     hasMorePosts = page.length === LIMITS.pageSize
     renderFeed(previouslyOpen)
     elements.feedStatus.hidden = true
+    delete elements.feedStatus.dataset.search
     celebrateMilestones()
+    // 搜索结果里可能有没加载到首页的旧帖，刚回复或删除过就得跟着刷新
+    if (searchQuery.trim() && !requestedPost) runServerSearch(searchQuery.trim(), { quiet: true })
 
     if (requestedPost) {
       const target = document.getElementById(`post-${requestedPost}`)
@@ -1667,6 +1755,8 @@ async function renderSession(nextSession) {
     cachedPosts = []
     hasMorePosts = false
     searchQuery = ''
+    searchRequest += 1
+    searchResults = { query: '', posts: [], loading: false }
     elements.searchInput.value = ''
     closeNotifications()
     showPanel('feed')
@@ -1836,8 +1926,28 @@ elements.panelLinks.forEach((link) => {
     }
     showPanel(link.dataset.panel)
     if (link.dataset.panel === 'likes') renderLikes()
+    if (link.dataset.panel === 'me') renderMyContent()
   })
 })
+
+// quiet：结果刷新时保留旧结果，不闪一下「正在搜索」，展开的帖子也不收起。
+async function runServerSearch(query, { quiet = false } = {}) {
+  const request = ++searchRequest
+  if (!quiet) {
+    searchResults = { query, posts: [], loading: true }
+    renderFeed(openPostIds())
+  }
+  try {
+    const posts = await backend.searchPosts(query)
+    if (request !== searchRequest) return
+    searchResults = { query, posts, loading: false }
+  } catch (error) {
+    if (request !== searchRequest) return
+    if (!quiet) searchResults = { query, posts: [], loading: false }
+    showToast(`只搜到了已加载的帖子：${friendlyError(error)}`, 'error')
+  }
+  if (!targetPostId()) renderFeed(openPostIds())
+}
 
 elements.searchInput.addEventListener('input', () => {
   searchQuery = elements.searchInput.value
@@ -1847,7 +1957,14 @@ elements.searchInput.addEventListener('input', () => {
   showPanel('feed')
   // 每次都要重建整个列表，所以别一个字符跑一次
   window.clearTimeout(searchTimer)
-  searchTimer = window.setTimeout(() => renderFeed(openPostIds()), 160)
+  const query = searchQuery.trim()
+  if (!query) {
+    searchRequest += 1
+    searchResults = { query: '', posts: [], loading: false }
+    searchTimer = window.setTimeout(() => renderFeed(openPostIds()), 160)
+    return
+  }
+  searchTimer = window.setTimeout(() => runServerSearch(query), 300)
 })
 
 elements.feedbackButton.addEventListener('click', () => {
@@ -2451,7 +2568,12 @@ async function showProfile(publicId) {
       edit.type = 'button'
       edit.addEventListener('click', () => {
         dialog.close()
+        if (targetPostId()) {
+          detailOrigin = null
+          setTargetPostUrl(null)
+        }
         showPanel('me')
+        renderMyContent()
       })
       const actions = element('div', 'profile-actions')
       actions.append(edit)
