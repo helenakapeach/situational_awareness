@@ -1037,9 +1037,30 @@ textarea::placeholder {
 }
 
 .post-detail-back {
-  display: inline-flex;
-  align-items: center;
-  min-height: 36px;
+  display: inline-grid;
+  place-items: center;
+}
+
+.panel-placeholder .post-detail-back {
+  margin: 14px auto 0;
+}
+
+time.is-toggleable {
+  cursor: pointer;
+}
+
+.my-content {
+  margin-top: 32px;
+}
+
+.my-content > h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.my-content > .trust-line {
+  margin: 4px 0 14px;
 }
 
 .post-edit {

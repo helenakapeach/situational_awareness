@@ -14,7 +14,7 @@ Members also have a profile, edited in the 我 panel: avatar, nickname, tagline,
 
 The bell in the top bar counts new replies on discussions you posted in or replied to. It's computed in the browser from the loaded feed and a per-user "last seen" timestamp in `localStorage` — there is no notifications table, no email, and it doesn't sync across devices.
 
-Admins (see below) get a section in 我 to list members, disable or re-enable accounts, mark roles as verified, and delete any post or reply. Invite codes are still created only in SQL. There are no DMs, categories, images, realtime updates, or email. Logged-in members can send a short feedback note from the top bar, filter the loaded posts with the top-bar search box, and switch between light and dark.
+Admins (see below) get a section in 我 to list members, disable or re-enable accounts, mark roles as verified, and delete any post or reply. Invite codes are still created only in SQL. There are no DMs, categories, images, realtime updates, or email. Logged-in members can send a short feedback note from the top bar, search every post by title or body from the top-bar search box (`search_posts()`, newest 50 matches), and switch between light and dark. The 我 panel also lists your own posts and replies, anonymous ones included, through `my_content()`; nobody else can see that list.
 
 ## Local UI demo
 

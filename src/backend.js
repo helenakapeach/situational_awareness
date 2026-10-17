@@ -6,6 +6,7 @@ const DEMO_SESSION_KEY = 'situational-awareness-demo-session'
 const DEMO_MEMBER_KEY = 'situational-awareness-demo-member'
 const DEMO_INVITE_CODE = 'DEMO2026'
 const DEMO_PROFILE_KEY = 'situational-awareness-demo-profile'
+const POST_COLUMNS = 'id,author_name,author_avatar_url,author_public_id,author_role,author_cohort_name,author_role_verified,is_anonymous,title,body,created_at,updated_at,upvote_count,post_votes(post_id)'
 
 const DEMO_COHORTS = [
   { id: 1, name: '创业' },
@@ -289,6 +290,50 @@ export function createBackend() {
     },
   })
 
+  // Ownership comes from a scoped RPC, without exposing author_id or
+  // requiring SELECT on the whole row for a PostgREST computed field.
+  async function hydratePosts(posts) {
+    if (!posts?.length) return []
+    const postIds = posts.map((post) => post.id)
+    const [
+      { data: replies, error: repliesError },
+      { data: ownership, error: ownershipError },
+      { data: opReplyIds, error: opError },
+    ] = await Promise.all([
+      supabase
+        .from('replies')
+        .select('id,post_id,parent_reply_id,author_name,author_avatar_url,author_public_id,author_role,author_cohort_name,author_role_verified,is_anonymous,body,created_at,updated_at,upvote_count,reply_votes(reply_id)')
+        .in('post_id', postIds),
+      supabase.rpc('own_content_ids', { p_post_ids: postIds }),
+      supabase.rpc('op_reply_ids', { p_post_ids: postIds }),
+    ])
+
+    if (repliesError) throw repliesError
+    if (ownershipError) throw ownershipError
+    if (opError) throw opError
+    const ownPosts = new Set((ownership?.posts || []).map(String))
+    const ownReplies = new Set((ownership?.replies || []).map(String))
+    const opReplies = new Set((opReplyIds || []).map(String))
+
+    const repliesByPost = new Map()
+    for (const { reply_votes, ...reply } of replies || []) {
+      const key = String(reply.post_id)
+      if (!repliesByPost.has(key)) repliesByPost.set(key, [])
+      repliesByPost
+        .get(key)
+        .push(withVoteState({
+          ...reply,
+          is_mine: ownReplies.has(String(reply.id)),
+          is_op: opReplies.has(String(reply.id)),
+        }, reply_votes && reply_votes.length > 0))
+    }
+
+    return posts.map(({ post_votes, ...post }) => ({
+      ...withVoteState({ ...post, is_mine: ownPosts.has(String(post.id)) }, post_votes && post_votes.length > 0),
+      replies: sortReplies(repliesByPost.get(String(post.id)) || []),
+    }))
+  }
+
   return {
     isDemo: false,
     storageBase: url.replace(/\/$/, ''),
@@ -408,12 +453,10 @@ export function createBackend() {
 
     // 游标用 created_at 而不是 offset：翻页过程中有人发帖也不会让某一条
     // 被挤到下一页而漏掉，或者重复出现一次。
-    // Ownership comes from a scoped RPC, without exposing author_id or
-    // requiring SELECT on the whole row for a PostgREST computed field.
     async listPosts({ before = null } = {}) {
       let query = supabase
         .from('posts')
-        .select('id,author_name,author_avatar_url,author_public_id,author_role,author_cohort_name,author_role_verified,is_anonymous,title,body,created_at,updated_at,upvote_count,post_votes(post_id)')
+        .select(POST_COLUMNS)
         .order('created_at', { ascending: false })
         .limit(LIMITS.pageSize)
 
@@ -422,46 +465,28 @@ export function createBackend() {
       const { data: posts, error: postsError } = await query
 
       if (postsError) throw postsError
-      if (!posts.length) return []
+      return hydratePosts(posts)
+    },
 
-      const postIds = posts.map((post) => post.id)
-      const [
-        { data: replies, error: repliesError },
-        { data: ownership, error: ownershipError },
-        { data: opReplyIds, error: opError },
-      ] = await Promise.all([
-        supabase
-          .from('replies')
-          .select('id,post_id,parent_reply_id,author_name,author_avatar_url,author_public_id,author_role,author_cohort_name,author_role_verified,is_anonymous,body,created_at,updated_at,upvote_count,reply_votes(reply_id)')
-          .in('post_id', postIds),
-        supabase.rpc('own_content_ids', { p_post_ids: postIds }),
-        supabase.rpc('op_reply_ids', { p_post_ids: postIds }),
-      ])
+    async searchPosts(term) {
+      const { data: ids, error: searchError } = await supabase.rpc('search_posts', { p_query: term })
+      if (searchError) throw searchError
+      if (!ids?.length) return []
 
-      if (repliesError) throw repliesError
-      if (ownershipError) throw ownershipError
-      if (opError) throw opError
-      const ownPosts = new Set((ownership?.posts || []).map(String))
-      const ownReplies = new Set((ownership?.replies || []).map(String))
-      const opReplies = new Set((opReplyIds || []).map(String))
+      const { data: posts, error: postsError } = await supabase
+        .from('posts')
+        .select(POST_COLUMNS)
+        .in('id', ids)
+        .order('created_at', { ascending: false })
 
-      const repliesByPost = new Map()
-      for (const { reply_votes, ...reply } of replies || []) {
-        const key = String(reply.post_id)
-        if (!repliesByPost.has(key)) repliesByPost.set(key, [])
-        repliesByPost
-          .get(key)
-          .push(withVoteState({
-            ...reply,
-            is_mine: ownReplies.has(String(reply.id)),
-            is_op: opReplies.has(String(reply.id)),
-          }, reply_votes && reply_votes.length > 0))
-      }
+      if (postsError) throw postsError
+      return hydratePosts(posts)
+    },
 
-      return posts.map(({ post_votes, ...post }) => ({
-        ...withVoteState({ ...post, is_mine: ownPosts.has(String(post.id)) }, post_votes && post_votes.length > 0),
-        replies: sortReplies(repliesByPost.get(String(post.id)) || []),
-      }))
+    async listMine() {
+      const { data, error } = await supabase.rpc('my_content')
+      if (error) throw error
+      return { posts: data?.posts || [], replies: data?.replies || [] }
     },
 
     async listLiked() {
@@ -552,6 +577,51 @@ export function createBackend() {
       if (error) throw error
     },
   }
+}
+
+function shapePosts(data, posts) {
+  const likedReplyIds = new Set(
+    (data.reply_votes || [])
+      .filter((vote) => vote.user_id === demoUser.id)
+      .map((vote) => Number(vote.reply_id)),
+  )
+  const likedPostIds = new Set(
+    (data.post_votes || [])
+      .filter((vote) => vote.user_id === demoUser.id)
+      .map((vote) => Number(vote.post_id)),
+  )
+
+  return posts.map((post) => {
+    const { author_id, ...rest } = post
+    const isAnonymous = post.is_anonymous !== false
+    return {
+      ...withVoteState(
+        {
+          ...rest,
+          ...(isAnonymous && contentIdentity(null)),
+          is_anonymous: isAnonymous,
+          is_mine: author_id === demoUser.id,
+        },
+        likedPostIds.has(Number(post.id)),
+      ),
+      replies: sortReplies(
+        data.replies
+          .filter((reply) => String(reply.post_id) === String(post.id))
+          .map((reply) => {
+            const { author_id: replyAuthorId, ...replyRest } = reply
+            return withVoteState(
+              {
+                ...replyRest,
+                ...(reply.is_anonymous && contentIdentity(null)),
+                is_mine: replyAuthorId === demoUser.id,
+                is_op: replyIsFromOp(isAnonymous, reply.is_anonymous, replyAuthorId === author_id),
+              },
+              likedReplyIds.has(Number(reply.id)),
+            )
+          }),
+      ),
+    }
+  })
 }
 
 function createDemoBackend() {
@@ -689,55 +759,57 @@ function createDemoBackend() {
 
     async listPosts({ before = null } = {}) {
       const data = readData()
-      const likedReplyIds = new Set(
-        (data.reply_votes || [])
-          .filter((vote) => vote.user_id === demoUser.id)
-          .map((vote) => Number(vote.reply_id)),
-      )
-      const likedPostIds = new Set(
-        (data.post_votes || [])
-          .filter((vote) => vote.user_id === demoUser.id)
-          .map((vote) => Number(vote.post_id)),
-      )
-
       const cutoff = before ? new Date(before).getTime() : null
 
-      return data.posts
-        .slice()
-        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-        .filter((post) => cutoff === null || new Date(post.created_at).getTime() < cutoff)
-        .slice(0, LIMITS.pageSize)
-        .map((post) => {
-          const { author_id, ...rest } = post
-          const isAnonymous = post.is_anonymous !== false
-          return {
-            ...withVoteState(
-              {
-                ...rest,
-                ...(isAnonymous && contentIdentity(null)),
-                is_anonymous: isAnonymous,
-                is_mine: author_id === demoUser.id,
-              },
-              likedPostIds.has(Number(post.id)),
-            ),
-            replies: sortReplies(
-              data.replies
-                .filter((reply) => String(reply.post_id) === String(post.id))
-                .map((reply) => {
-                  const { author_id: replyAuthorId, ...replyRest } = reply
-                  return withVoteState(
-                    {
-                      ...replyRest,
-                      ...(reply.is_anonymous && contentIdentity(null)),
-                      is_mine: replyAuthorId === demoUser.id,
-                      is_op: replyIsFromOp(isAnonymous, reply.is_anonymous, replyAuthorId === author_id),
-                    },
-                    likedReplyIds.has(Number(reply.id)),
-                  )
-                }),
-            ),
-          }
-        })
+      return shapePosts(
+        data,
+        data.posts
+          .slice()
+          .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+          .filter((post) => cutoff === null || new Date(post.created_at).getTime() < cutoff)
+          .slice(0, LIMITS.pageSize),
+      )
+    },
+
+    async searchPosts(term) {
+      const needle = String(term || '').trim().toLowerCase()
+      if (!needle) return []
+      const data = readData()
+      return shapePosts(
+        data,
+        data.posts
+          .filter((post) =>
+            post.title.toLowerCase().includes(needle) || post.body.toLowerCase().includes(needle))
+          .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+          .slice(0, 50),
+      )
+    },
+
+    async listMine() {
+      const data = readData()
+      const byNewest = (left, right) => new Date(right.created_at) - new Date(left.created_at)
+      return {
+        posts: data.posts
+          .filter((post) => post.author_id === demoUser.id)
+          .map((post) => ({
+            id: post.id,
+            title: post.title,
+            created_at: post.created_at,
+            is_anonymous: post.is_anonymous !== false,
+          }))
+          .sort(byNewest),
+        replies: data.replies
+          .filter((reply) => reply.author_id === demoUser.id)
+          .map((reply) => ({
+            id: reply.id,
+            post_id: reply.post_id,
+            body: reply.body,
+            created_at: reply.created_at,
+            is_anonymous: Boolean(reply.is_anonymous),
+            post_title: data.posts.find((post) => String(post.id) === String(reply.post_id))?.title || '这条讨论',
+          }))
+          .sort(byNewest),
+      }
     },
 
     async listLiked() {

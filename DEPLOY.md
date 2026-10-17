@@ -50,7 +50,7 @@ npm run dev
    npx supabase@2.117.0 db push
    ```
 
-   `db push` 成功才算数据库就绪。缺哪一条 migration，对应功能就会在网页上失败（例如没有 `own_content_ids`、`op_reply_ids`、`profiles` 或 `replies.parent_reply_id` 时，feed 会整页挂掉）。头像用的 `avatars` Storage bucket 也由 migration 创建，不用手动建。
+   `db push` 成功才算数据库就绪。缺哪一条 migration，对应功能就会在网页上失败（例如没有 `own_content_ids`、`op_reply_ids`、`profiles` 或 `replies.parent_reply_id` 时，feed 会整页挂掉；没有 `search_posts` / `my_content` 时，搜索只剩已加载的帖子，「我的讨论」加载失败）。头像用的 `avatars` Storage bucket 也由 migration 创建，不用手动建。
 
 ### 3. 打开 Google 登录，关掉邮箱注册
 
