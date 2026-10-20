@@ -5,8 +5,8 @@ import argparse
 from pymongo import MongoClient
 
 from .config import get_settings
+from .database import bootstrap_indexes
 from .sandbox import active_sandbox_database
-from .services import bootstrap_indexes
 
 
 def main():

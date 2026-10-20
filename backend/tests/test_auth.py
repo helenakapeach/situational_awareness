@@ -5,7 +5,8 @@ import jwt
 import pytest
 from fastapi import HTTPException
 
-from app.auth import (
+from app.auth.models import SessionRequest
+from app.auth.service import (
     AUDIENCE,
     ISSUER,
     TOKEN_TYPE,
@@ -14,7 +15,6 @@ from app.auth import (
     verify_identity,
 )
 from app.config import Settings, get_settings
-from app.models import SessionRequest
 
 
 def test_app_token_has_expiry_type_and_independent_issuer():
@@ -91,7 +91,7 @@ def test_supabase_token_verified_remotely_not_trusted_from_payload(monkeypatch):
             },
         )
 
-    monkeypatch.setattr("app.auth.httpx.get", get)
+    monkeypatch.setattr("app.auth.service.httpx.get", get)
     user = verify_identity(SessionRequest(access_token="external-token"), get_settings())
     assert user["id"] == "supabase-user"
     assert user["email"] == "user@example.com"
@@ -108,7 +108,7 @@ def test_supabase_token_verified_remotely_not_trusted_from_payload(monkeypatch):
 )
 def test_unverified_or_non_google_supabase_identity_rejected(monkeypatch, identity):
     monkeypatch.setattr(
-        "app.auth.httpx.get",
+        "app.auth.service.httpx.get",
         lambda url, **kwargs: httpx.Response(
             200,
             request=httpx.Request("GET", url),
@@ -131,7 +131,7 @@ def test_auth0_exchange_checks_signature_audience_and_nonce(monkeypatch):
         auth0_client_id="client-id",
     )
     verifier = SimpleNamespace(get_signing_key_from_jwt=lambda token: SimpleNamespace(key=key.public_key()))
-    monkeypatch.setattr("app.auth.jwks_client", lambda domain: verifier)
+    monkeypatch.setattr("app.auth.service.jwks_client", lambda domain: verifier)
     claims = {
         "sub": "google-oauth2|person",
         "email": "PERSON@EXAMPLE.COM",

@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from app.auth import create_app_session_token
+from app.auth.service import create_app_session_token
 from app.config import get_settings
 from app.main import create_app
 

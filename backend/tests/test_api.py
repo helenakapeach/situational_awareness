@@ -5,7 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from app.auth import create_app_session_token
+from app.auth.service import create_app_session_token
 from app.config import get_settings
 from app.main import create_app
 
@@ -60,7 +60,7 @@ def test_route_auth_and_identity_exchange(client, db, monkeypatch):
             },
         )
 
-    monkeypatch.setattr("app.auth.httpx.get", get)
+    monkeypatch.setattr("app.auth.service.httpx.get", get)
     response = client.post("/api/auth/session", json={"access_token": "verified-by-provider"})
     assert response.status_code == 200, response.text
     data = response.json()

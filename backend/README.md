@@ -3,11 +3,11 @@
 这是独立的 **uv + FastAPI + Pydantic + MongoDB** 非生产环境。Supabase 仍负责生产数据库和 Google Auth。普通页面访问继续使用现有 Supabase adapter，即使已配置 API 地址也不会切换；只有 `?backend=mongo` 才会选择临时 Mongo 沙箱。
 
 ```text
-UI → src/http-backend.js → FastAPI routes → BackendService → MongoDB
+UI → src/http-backend.js → 组件 router → 组件 service → MongoDB
 Google/Supabase Auth → 验证身份交换 → 独立的应用 JWT
 ```
 
-`app/models.py` 校验请求字段；`main.py` 处理 HTTP；`services.py` 实现成员权限、隐私、CRUD、投票和管理操作。业务方法不依赖 DOM 或浏览器。同步 PyMongo 在 FastAPI worker pool 中运行。API 模式下，MongoDB 是唯一业务数据存储。
+业务代码按组件组织。每个组件的 `models.py` 校验请求字段，`router.py` 负责 HTTP，`service.py` 实现对应业务操作。`main.py` 只负责应用启动、公共中间件、健康检查和路由注册。业务方法不依赖 DOM 或浏览器。同步 PyMongo 在 FastAPI worker pool 中运行。API 模式下，MongoDB 是唯一业务数据存储。
 
 ## 目录与命名规则
 
@@ -16,11 +16,23 @@ backend/                 # 后端项目根目录，放置依赖、配置和部�
   pyproject.toml
   uv.lock
   app/                   # Python 包，统一通过 app.* 导入
-    __init__.py
-    main.py              # FastAPI 入口与路由，提供 create_app 工厂
+    main.py              # create_app 工厂、启动和统一路由注册
     config.py            # 运行时配置
-    models.py            # Pydantic 请求模型
-    services.py          # 业务操作
+    database.py          # Mongo 索引和初始化
+    dependencies.py      # 请求数据库、当前用户依赖
+    forum/               # 帖子、回复、搜索、投票、收藏列表及反馈
+      router.py
+      service.py
+      models.py
+    profile/             # 资料、公开卡片、头像、cohort、角色验证
+      router.py
+      service.py
+      models.py
+    membership/          # 成员状态、邀请码及账号禁用管理；文件结构同上
+    auth/                # 外部身份校验、应用 JWT 和会话接口；文件结构同上
+    common/
+      models.py          # 共同的请求校验配置
+      service.py         # 请求身份、事务、成员和管理员检查
     supabase_dump.py     # 只读导出来源快照
     migration.py         # 校验快照、适配字段、导入和核对 Mongo
     sandbox.py           # 启动重建、租约及新旧沙箱代次切换
@@ -28,7 +40,9 @@ backend/                 # 后端项目根目录，放置依赖、配置和部�
   scripts/               # 可重复使用的部署工具
 ```
 
-`backend` 表示仓库中的项目目录，不作为 Python 导入前缀；`app` 才是 Python 包名。从 `backend/` 工作目录启动 `app.main:create_app`，代码使用 `from app.services import BackendService`，包内使用相对导入。模块、函数和变量使用 `snake_case`，类使用 `PascalCase`，常量使用 `UPPER_SNAKE_CASE`。新增模块按职责命名，不再添加项目缩写前缀。
+`backend` 表示仓库中的项目目录，不作为 Python 导入前缀；`app` 才是 Python 包名。从 `backend/` 工作目录启动 `app.main:create_app`。组件路径统一为 `app.<组件>.router`、`app.<组件>.service` 和 `app.<组件>.models`，例如 `from app.forum.service import ForumService` 或 `from app.profile.models import ProfileUpdate`；包内使用相对导入。模块、函数和变量使用 `snake_case`，类使用 `PascalCase`，常量使用 `UPPER_SNAKE_CASE`。
+
+论坛通过组合 `ProfileService` 读取作者当前资料；成员兑换邀请码时也复用该服务初始化资料，并传递同一个 Mongo 事务 session。资料组件不依赖论坛。各组件直接暴露自己的服务，不再保留统一的 `BackendService` 转发层。所有业务 API 由 `main.py` 统一挂载到 `/api`，已有 HTTP URL 和返回格式不变；公开头像路径继续保持 `/storage/v1/object/public/avatars/...`。
 
 ## 本地运行
 

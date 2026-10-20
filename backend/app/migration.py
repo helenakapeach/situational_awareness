@@ -13,7 +13,7 @@ from uuid import UUID
 
 from pymongo.errors import DuplicateKeyError
 
-from .services import create_indexes
+from .database import create_indexes
 
 TABLES = (
     "users",

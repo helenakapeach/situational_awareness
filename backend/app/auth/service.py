@@ -12,7 +12,7 @@ import jwt
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from .config import Settings, get_settings
+from ..config import Settings, get_settings
 from .models import SessionRequest
 
 ISSUER = "situational-awareness"

@@ -6,7 +6,10 @@ from datetime import datetime, timezone
 import pytest
 from fastapi import HTTPException
 
-from app.services import BackendService, bootstrap_indexes
+from app.database import bootstrap_indexes
+from app.forum.service import ForumService
+from app.membership.service import MembershipService
+from app.profile.service import ProfileService
 
 
 def add_member(db, user_id, *, admin=False, disabled=False, name=None, email=None, avatar=None):
@@ -30,8 +33,20 @@ def add_member(db, user_id, *, admin=False, disabled=False, name=None, email=Non
     return profile
 
 
-def service(db, user_id, **metadata):
-    return BackendService(db, {"id": user_id, "email": f"{user_id}@example.com", "user_metadata": metadata})
+def actor(db, user_id, service_type, **metadata):
+    return service_type(db, {"id": user_id, "email": f"{user_id}@example.com", "user_metadata": metadata})
+
+
+def forum_service(db, user_id, **metadata):
+    return actor(db, user_id, ForumService, **metadata)
+
+
+def profile_service(db, user_id, **metadata):
+    return actor(db, user_id, ProfileService, **metadata)
+
+
+def membership_service(db, user_id, **metadata):
+    return actor(db, user_id, MembershipService, **metadata)
 
 
 @pytest.fixture(autouse=True)
@@ -41,9 +56,9 @@ def mongo_indexes(db):
 
 def test_invite_quota_and_idempotent_redemption(db):
     db.invite_codes.insert_one({"code": "ONEUSE", "is_active": True, "max_uses": 1, "used_count": 0})
-    assert service(db, "invited-a").redeem_invite_code(" oneuse ") is True
-    assert service(db, "invited-a").redeem_invite_code("wrong") is True
-    assert service(db, "invited-b").redeem_invite_code("ONEUSE") is False
+    assert membership_service(db, "invited-a").redeem_invite_code(" oneuse ") is True
+    assert membership_service(db, "invited-a").redeem_invite_code("wrong") is True
+    assert membership_service(db, "invited-b").redeem_invite_code("ONEUSE") is False
     assert db.invite_codes.find_one({"code": "ONEUSE"})["used_count"] == 1
     assert db.profiles.find_one({"user_id": "invited-a"}) is not None
 
@@ -52,7 +67,7 @@ def test_invite_quota_is_serialized_across_concurrent_redemptions(db):
     db.invite_codes.insert_one({"code": "RACE", "is_active": True, "max_uses": 2, "used_count": 0})
     users = [f"racer-{n}" for n in range(8)]
     with ThreadPoolExecutor(max_workers=8) as pool:
-        results = list(pool.map(lambda uid: service(db, uid).redeem_invite_code("RACE"), users))
+        results = list(pool.map(lambda uid: membership_service(db, uid).redeem_invite_code("RACE"), users))
     assert sum(results) == 2
     assert db.invite_codes.find_one({"code": "RACE"})["used_count"] == 2
     assert db.members.count_documents({"invite_code": "RACE"}) == 2
@@ -61,8 +76,8 @@ def test_invite_quota_is_serialized_across_concurrent_redemptions(db):
 def test_content_ownership_anonymity_and_op_state(db):
     add_member(db, "writer")
     add_member(db, "reader")
-    writer = service(db, "writer")
-    reader = service(db, "reader")
+    writer = forum_service(db, "writer")
+    reader = forum_service(db, "reader")
     writer.create_post({"title": "Question", "body": "Body", "is_anonymous": True})
     post = db.posts.find_one({"author_id": "writer"})
     writer.create_reply(post["id"], {"body": "Same anonymous author", "is_anonymous": True})
@@ -82,8 +97,8 @@ def test_content_ownership_anonymity_and_op_state(db):
 def test_reply_delete_promotes_children_and_post_delete_cascades_votes(db):
     add_member(db, "author")
     add_member(db, "other")
-    author = service(db, "author")
-    other = service(db, "other")
+    author = forum_service(db, "author")
+    other = forum_service(db, "other")
     author.create_post({"title": "Question", "body": "Body", "is_anonymous": False})
     post_id = db.posts.find_one({"author_id": "author"})["id"]
     author.create_reply(post_id, {"body": "Parent", "is_anonymous": False})
@@ -105,8 +120,8 @@ def test_reply_delete_promotes_children_and_post_delete_cascades_votes(db):
 def test_profile_privacy_verification_and_disabled_target(db):
     add_member(db, "admin", admin=True)
     add_member(db, "student", name="Student")
-    admin = service(db, "admin")
-    student = service(db, "student")
+    admin = profile_service(db, "admin")
+    student = profile_service(db, "student")
     student.update_own_profile(
         {
             "display_name": "Student",
@@ -132,7 +147,7 @@ def test_profile_privacy_verification_and_disabled_target(db):
     card = admin.get_profile("public-student")
     assert card["is_self"] is False
     assert "contact_email" not in card
-    admin.admin_set_disabled("student", True)
+    membership_service(db, "admin").admin_set_disabled("student", True)
     with pytest.raises(HTTPException) as error:
         admin.get_profile("public-student")
     assert error.value.status_code == 404
@@ -141,9 +156,9 @@ def test_profile_privacy_verification_and_disabled_target(db):
 def test_profile_change_clears_verification_and_retired_cohort_can_remain(db):
     add_member(db, "admin", admin=True)
     add_member(db, "student")
-    student = service(db, "student")
+    student = profile_service(db, "student")
     student.update_own_profile({"display_name": "Student", "role": "student", "cohort_id": 1})
-    service(db, "admin").admin_set_role_verified("student", True)
+    profile_service(db, "admin").admin_set_role_verified("student", True)
     db.cohorts.update_one({"id": 1}, {"$set": {"is_active": False}})
     unchanged = student.update_own_profile({"display_name": "Student", "role": "student", "cohort_id": 1})
     assert unchanged["cohort_name"] == "创业"
@@ -156,7 +171,7 @@ def test_profile_change_clears_verification_and_retired_cohort_can_remain(db):
 def test_avatar_replacement_and_clear_restore_google_avatar(db):
     google = "https://images.example/avatar"
     add_member(db, "avatar-user", avatar=google)
-    actor = service(db, "avatar-user", avatar_url=google)
+    actor = profile_service(db, "avatar-user", avatar_url=google)
     first = actor.upload_avatar(b"first")
     first_id = first["avatar_url"]
     assert first["is_self"] is True
@@ -172,7 +187,7 @@ def test_avatar_replacement_and_clear_restore_google_avatar(db):
 
 def test_liked_lists_choose_newest_content_before_limiting(db):
     add_member(db, "liker")
-    liker = service(db, "liker")
+    liker = forum_service(db, "liker")
     start = datetime(2025, 1, 1, tzinfo=timezone.utc)
     for n in range(105):
         post_id = n + 1
@@ -206,11 +221,11 @@ def test_liked_lists_choose_newest_content_before_limiting(db):
 
 def test_named_content_identity_updates_dynamically(db):
     add_member(db, "author", name="Before")
-    author = service(db, "author")
+    author = forum_service(db, "author")
     author.create_post({"title": "Question", "body": "Body", "is_anonymous": False})
     post_id = db.posts.find_one({"author_id": "author"})["id"]
     author.create_reply(post_id, {"body": "Reply", "is_anonymous": False})
-    author.update_own_profile({"display_name": "After", "role": "mentor"})
+    profile_service(db, "author").update_own_profile({"display_name": "After", "role": "mentor"})
     feed_item = author.list_posts()[0]
     assert feed_item["author_name"] == "After"
     assert feed_item["author_role"] == "mentor"
@@ -220,8 +235,8 @@ def test_named_content_identity_updates_dynamically(db):
 def test_votes_toggle_counts_and_liked_by_me(db):
     add_member(db, "author")
     add_member(db, "voter")
-    author = service(db, "author")
-    voter = service(db, "voter")
+    author = forum_service(db, "author")
+    voter = forum_service(db, "voter")
     author.create_post({"title": "Question", "body": "Body", "is_anonymous": True})
     post_id = db.posts.find_one({"author_id": "author"})["id"]
     author.create_reply(post_id, {"body": "Reply", "is_anonymous": False})
@@ -242,11 +257,11 @@ def test_votes_toggle_counts_and_liked_by_me(db):
 def test_role_verification_requires_selected_role(db):
     add_member(db, "admin", admin=True)
     add_member(db, "member")
-    admin = service(db, "admin")
+    admin = profile_service(db, "admin")
     with pytest.raises(HTTPException) as error:
         admin.admin_set_role_verified("member", True)
     assert error.value.status_code == 400
-    assert admin.admin_members()[1]["role_verified"] is False
+    assert membership_service(db, "admin").admin_members()[1]["role_verified"] is False
 
 
 def test_concurrent_duplicate_redemption_for_same_user_charges_once(db):
@@ -258,7 +273,9 @@ def test_concurrent_duplicate_redemption_for_same_user_charges_once(db):
     )
     codes = ["FIRST", "SECOND"] * 4
     with ThreadPoolExecutor(max_workers=len(codes)) as pool:
-        results = list(pool.map(lambda code: service(db, "same-user").redeem_invite_code(code), codes))
+        results = list(
+            pool.map(lambda code: membership_service(db, "same-user").redeem_invite_code(code), codes)
+        )
     assert all(results)
     assert db.members.count_documents({"user_id": "same-user"}) == 1
     assert sum(db.invite_codes.find_one({"code": code})["used_count"] for code in ("FIRST", "SECOND")) == 1
@@ -267,7 +284,7 @@ def test_concurrent_duplicate_redemption_for_same_user_charges_once(db):
 def test_disabled_member_cannot_write_content(db):
     add_member(db, "disabled", disabled=True)
     with pytest.raises(HTTPException) as error:
-        service(db, "disabled").create_post({"title": "Question", "body": "Body", "is_anonymous": True})
+        forum_service(db, "disabled").create_post({"title": "Question", "body": "Body", "is_anonymous": True})
     assert error.value.status_code == 403
 
 
@@ -287,7 +304,7 @@ def test_pagination_ties_use_numeric_id_cursor(db):
             for n in range(1, 26)
         ]
     )
-    reader = service(db, "reader")
+    reader = forum_service(db, "reader")
     first = reader.list_posts()
     second = reader.list_posts(before=first[-1]["created_at"], before_id=first[-1]["id"])
     assert [p["id"] for p in first + second] == list(range(25, 0, -1))
@@ -295,24 +312,26 @@ def test_pagination_ties_use_numeric_id_cursor(db):
 
 def test_cohort_rename_and_nonstudent_change_reflect_in_named_content(db):
     add_member(db, "student")
-    student = service(db, "student")
-    student.update_own_profile({"display_name": "Student", "role": "student", "cohort_id": 1})
+    student = forum_service(db, "student")
+    profile_service(db, "student").update_own_profile(
+        {"display_name": "Student", "role": "student", "cohort_id": 1}
+    )
     student.create_post({"title": "Question", "body": "Body", "is_anonymous": False})
     db.cohorts.update_one({"id": 1}, {"$set": {"name": "Renamed cohort"}})
     assert student.list_posts()[0]["author_cohort_name"] == "Renamed cohort"
-    assert student.get_profile("public-student")["cohort_name"] == "Renamed cohort"
+    assert profile_service(db, "student").get_profile("public-student")["cohort_name"] == "Renamed cohort"
     bootstrap_indexes(db)  # Restart must preserve operator-maintained cohort names.
     assert db.cohorts.find_one({"id": 1})["name"] == "Renamed cohort"
-    updated = student.update_own_profile({"display_name": "Mentor", "role": "mentor"})
+    updated = profile_service(db, "student").update_own_profile({"display_name": "Mentor", "role": "mentor"})
     assert updated["cohort_id"] is None and updated["cohort_name"] is None
     assert student.list_posts()[0]["author_cohort_name"] is None
 
 
 def test_parallel_vote_toggles_serialize_without_duplicate_votes(db):
     add_member(db, "writer")
-    writer = service(db, "writer")
+    writer = forum_service(db, "writer")
     writer.create_post({"title": "Question", "body": "Body"})
     post_id = db.posts.find_one({})["id"]
     with ThreadPoolExecutor(max_workers=4) as pool:
-        list(pool.map(lambda _: service(db, "writer").toggle_post_vote(post_id), range(8)))
+        list(pool.map(lambda _: forum_service(db, "writer").toggle_post_vote(post_id), range(8)))
     assert db.post_votes.count_documents({"post_id": post_id}) == 0

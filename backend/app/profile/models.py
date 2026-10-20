@@ -1,65 +1,17 @@
+"""Request models for profile operations."""
+
 import re
-from typing import Annotated, Literal
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import Field, model_validator
 
+from ..common.models import Payload
 
-class Payload(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-
-
-Title = Annotated[str, StringConstraints(min_length=3, max_length=120)]
-PostBody = Annotated[str, StringConstraints(min_length=1, max_length=4000)]
-ReplyBody = Annotated[str, StringConstraints(min_length=1, max_length=2000)]
-
-
-class PostUpdate(Payload):
-    title: Title
-    body: PostBody
-
-
-class PostCreate(PostUpdate):
-    is_anonymous: bool = True
-
-
-class ReplyUpdate(Payload):
-    body: ReplyBody
-
-
-class ReplyCreate(ReplyUpdate):
-    is_anonymous: bool = False
-    parent_reply_id: int | None = Field(default=None, gt=0)
-
-
-class Feedback(Payload):
-    body: ReplyBody
-
-
-class InviteCode(Payload):
-    code: str = Field(min_length=1, max_length=256)
-
-
-class DisabledUpdate(Payload):
-    is_disabled: bool
+Role = Literal["committee", "mentor", "student", "other"]
 
 
 class VerificationUpdate(Payload):
     verified: bool
-
-
-class SessionRequest(Payload):
-    provider: Literal["supabase", "auth0"] = "supabase"
-    access_token: str | None = Field(default=None, min_length=1, max_length=20000)
-    idToken: str | None = Field(default=None, min_length=1, max_length=20000)
-    nonce: str | None = Field(default=None, max_length=512)
-
-    @model_validator(mode="after")
-    def token_for_provider(self):
-        if self.provider == "supabase" and not self.access_token:
-            raise ValueError("access_token is required for Supabase")
-        if self.provider == "auth0" and not self.idToken:
-            raise ValueError("idToken is required for Auth0")
-        return self
 
 
 class ProfileUpdate(Payload):
@@ -72,7 +24,7 @@ class ProfileUpdate(Payload):
     email_public: bool = False
     wechat_id: str | None = Field(default=None, max_length=20)
     wechat_public: bool = False
-    role: Literal["committee", "mentor", "student", "other"] | None = None
+    role: Role | None = None
     cohort_id: int | None = Field(default=None, gt=0)
     graduation_year: int | None = Field(default=None, ge=2016, le=2027)
 

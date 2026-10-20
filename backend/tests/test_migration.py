@@ -6,8 +6,8 @@ from uuid import uuid4
 
 import pytest
 
+from app.database import bootstrap_indexes, create_indexes
 from app.migration import MigrationError, import_bundle, load_bundle, validate_bundle, verify_bundle
-from app.services import bootstrap_indexes, create_indexes
 
 USER1 = "00000000-0000-4000-8000-000000000001"
 USER2 = "00000000-0000-4000-8000-000000000002"

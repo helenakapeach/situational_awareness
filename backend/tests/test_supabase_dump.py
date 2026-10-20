@@ -348,8 +348,10 @@ def _source_state(psycopg, database_url):
 
 def test_exported_snapshot_imports_and_verifies_through_services(source_database, db, tmp_path):
     """Use both real databases and the runtime migration services with a fresh namespace."""
+    from app.database import bootstrap_indexes
+    from app.forum.service import ForumService
     from app.migration import import_bundle, verify_bundle
-    from app.services import BackendService, bootstrap_indexes
+    from app.profile.service import ProfileService
 
     psycopg, source_url = source_database
     output = tmp_path / "end-to-end"
@@ -374,10 +376,11 @@ def test_exported_snapshot_imports_and_verifies_through_services(source_database
         assert verify_bundle(target, bundle)["ok"]
         bootstrap_indexes(target)
         assert verify_bundle(target, bundle)["ok"]  # Startup must not add/delete source cohort records.
-        svc = BackendService(target, {"id": source_user})
+        svc = ForumService(target, {"id": source_user})
+        profiles = ProfileService(target, {"id": source_user})
         post = svc.get_post(7)
         assert post["is_mine"] is True and post["upvote_count"] == 1
-        assert svc.get_own_profile()["role_verified"] is True
+        assert profiles.get_own_profile()["role_verified"] is True
         assert target.members.find_one({"user_id": source_user})["is_admin"] is True
         assert target.feedback.find_one({"id": 4})["user_id"].endswith("000000000002")
         svc.create_post({"title": "New after import", "body": "Next id", "is_anonymous": True})
