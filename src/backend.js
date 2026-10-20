@@ -1,11 +1,13 @@
 import { createClient } from '@supabase/supabase-js'
 import { LIMITS, normalizeInviteCode, postIdFromSearch, postUrl, replyIsFromOp, sortReplies, withVoteState } from './lib.js'
+import { createHttpBackend } from './http-backend.js'
 
 const DEMO_STORAGE_KEY = 'situational-awareness-demo-v9'
 const DEMO_SESSION_KEY = 'situational-awareness-demo-session'
 const DEMO_MEMBER_KEY = 'situational-awareness-demo-member'
 const DEMO_INVITE_CODE = 'DEMO2026'
 const DEMO_PROFILE_KEY = 'situational-awareness-demo-profile'
+const SANDBOX_API_BASE_URL = 'https://linghang-main-app-711094273715.us-east1.run.app'
 
 const DEMO_COHORTS = [
   { id: 1, name: '创业' },
@@ -271,12 +273,24 @@ function redirectUrl() {
   return postUrl(window.location.href, postIdFromSearch(window.location.search))
 }
 
+export function resolveBackendMode({ search = '', apiBaseUrl = '' } = {}) {
+  if (new URLSearchParams(search).get('demo') === '1') return 'demo'
+  if (new URLSearchParams(search).get('backend') !== 'mongo') return 'supabase'
+  if (!String(apiBaseUrl).trim()) throw new Error('Mongo backend was requested, but no API base URL is configured.')
+  return 'mongo'
+}
+
 export function createBackend() {
   const url = import.meta.env.VITE_SUPABASE_URL || ''
   const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || ''
-  const requestedDemo = new URLSearchParams(window.location.search).get('demo') === '1'
+  const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL || ''
+  const mode = resolveBackendMode({ search: window.location.search, apiBaseUrl: configuredApiBaseUrl || SANDBOX_API_BASE_URL })
 
-  if (requestedDemo || !hasValidConfig(url, key)) {
+  if (mode === 'demo') return createDemoBackend()
+  if (!hasValidConfig(url, key)) {
+    if (mode === 'mongo') {
+      throw new Error('Mongo backend requires a valid HTTPS VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY for Google sign-in.')
+    }
     return createDemoBackend()
   }
 
@@ -289,7 +303,16 @@ export function createBackend() {
     },
   })
 
+  if (mode === 'mongo') {
+    return createHttpBackend({ baseUrl: configuredApiBaseUrl || SANDBOX_API_BASE_URL, auth: supabase.auth })
+  }
+
+  return createSupabaseBackend({ supabase, url })
+}
+
+export function createSupabaseBackend({ supabase, url }) {
   return {
+    mode: 'supabase',
     isDemo: false,
     storageBase: url.replace(/\/$/, ''),
 
@@ -611,6 +634,7 @@ function createDemoBackend() {
   }
 
   return {
+    mode: 'demo',
     isDemo: true,
     storageBase: '',
 

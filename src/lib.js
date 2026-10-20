@@ -39,6 +39,10 @@ export function normalizePostId(value) {
   return /^\d+$/.test(text) && Number(text) > 0 ? text : null
 }
 
+export function backendStorageKey(key, backendMode) {
+  return backendMode === 'mongo' ? `${key}:mongo` : key
+}
+
 export function postIdFromSearch(search = '') {
   return normalizePostId(new URLSearchParams(search).get('post'))
 }
@@ -46,8 +50,10 @@ export function postIdFromSearch(search = '') {
 export function postUrl(currentUrl, postId = null) {
   const url = new URL(currentUrl)
   const normalized = normalizePostId(postId)
+  const mongoOptIn = url.searchParams.get('backend') === 'mongo'
   url.hash = ''
   url.search = ''
+  if (mongoOptIn) url.searchParams.set('backend', 'mongo')
   if (normalized) url.searchParams.set('post', normalized)
   return url.href
 }

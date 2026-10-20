@@ -4,6 +4,7 @@ import test from 'node:test'
 import {
   anonymousPersona,
   assignAnonymousPersonas,
+  backendStorageKey,
   displayAvatarUrl,
   displayName,
   excerptPlain,
@@ -198,6 +199,21 @@ test('post deep links keep only a valid post id', () => {
     postUrl('https://example.com/situational_awareness/?post=7#token'),
     'https://example.com/situational_awareness/',
   )
+  assert.equal(
+    postUrl('https://example.com/situational_awareness/?backend=mongo&post=7&code=secret#token', 42),
+    'https://example.com/situational_awareness/?backend=mongo&post=42',
+  )
+  assert.equal(
+    postUrl('https://example.com/situational_awareness/?backend=supabase&post=7', 42),
+    'https://example.com/situational_awareness/?post=42',
+  )
+})
+
+test('business storage keys keep Supabase names and isolate Mongo data', () => {
+  const key = 'situational-awareness-drafts:user-1'
+  assert.equal(backendStorageKey(key, 'supabase'), key)
+  assert.equal(backendStorageKey(key, 'demo'), key)
+  assert.equal(backendStorageKey(key, 'mongo'), `${key}:mongo`)
 })
 
 test('copied post links put the title above the URL', () => {

@@ -1,0 +1,53 @@
+name: Backend contract parity
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    env:
+      TEST_MONGODB_URI: mongodb://localhost:27017/?replicaSet=rs0&directConnection=true
+      TEST_POSTGRES_URL: postgresql://postgres:migration-test-only@localhost:55432/postgres
+      TEST_SANDBOX_MONGODB_URI: mongodb://localhost:27017/?replicaSet=rs0&directConnection=true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: '0.9.22'
+          python-version: '3.12'
+      - name: Start isolated MongoDB replica set
+        run: |
+          docker run -d --name parity-mongo -p 127.0.0.1:27017:27017 mongo:8.0 --replSet rs0 --bind_ip_all
+          for attempt in $(seq 1 30); do
+            if docker exec parity-mongo mongosh --quiet --eval 'db.runCommand({ping:1})' >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          docker exec parity-mongo mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]})'
+          for attempt in $(seq 1 30); do
+            if docker exec parity-mongo mongosh --quiet --eval 'quit(db.hello().isWritablePrimary ? 0 : 1)'; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Start isolated PostgreSQL for export tests
+        run: |
+          docker run -d --name parity-postgres -e POSTGRES_PASSWORD=migration-test-only -p 127.0.0.1:55432:5432 postgres:17
+          for attempt in $(seq 1 30); do
+            if docker exec parity-postgres pg_isready -U postgres; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Install locked dependencies
+        run: uv sync --project app --locked --extra migration
+      - name: Lint
+        run: |
+          uv run --project app ruff check app
+          uv run --project app ruff format --check app
+      - name: Test API and Mongo service parity
+        run: uv run --project app --extra migration pytest app/tests -ra

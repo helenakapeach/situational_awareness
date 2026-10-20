@@ -4,6 +4,7 @@ import {
   LIMITS,
   anonymousPersona,
   assignAnonymousPersonas,
+  backendStorageKey,
   displayAvatarUrl,
   displayName,
   excerptPlain,
@@ -100,10 +101,10 @@ const elements = {
 }
 
 const THEME_KEY = 'situational-awareness-theme'
-const TARGET_POST_KEY = 'situational-awareness-target-post'
-const UNREAD_BASELINE_KEY = 'situational-awareness-unread-baseline'
-const POST_SEEN_KEY = 'situational-awareness-post-seen'
-const MILESTONES_KEY = 'situational-awareness-milestones'
+const TARGET_POST_KEY = backendStorageKey('situational-awareness-target-post', backend.mode)
+const UNREAD_BASELINE_KEY = backendStorageKey('situational-awareness-unread-baseline', backend.mode)
+const POST_SEEN_KEY = backendStorageKey('situational-awareness-post-seen', backend.mode)
+const MILESTONES_KEY = backendStorageKey('situational-awareness-milestones', backend.mode)
 const BASE_DOCUMENT_TITLE = document.title
 
 let isAdmin = false
@@ -298,7 +299,7 @@ function isWechatBrowser() {
 // 回复框和编辑框都是 renderFeed 现搭的，任何一次重绘都会把它们连同里面
 // 没提交的字一起扔掉。草稿存在 DOM 之外，重绘后再填回去，并按用户写入
 // localStorage，刷新或走完登录还能在。退出登录时整份删掉。
-const DRAFTS_KEY = 'situational-awareness-drafts'
+const DRAFTS_KEY = backendStorageKey('situational-awareness-drafts', backend.mode)
 let draftOwnerId = null
 let restoringDrafts = false
 
@@ -1595,7 +1596,7 @@ async function loadPosts({ preserveOpenPost = null, quiet = false } = {}) {
       page.length === LIMITS.pageSize &&
       !cachedPosts.some((post) => String(post.id) === requestedPost)
     ) {
-      page = await backend.listPosts({ before: cachedPosts.at(-1).created_at })
+      page = await backend.listPosts({ before: cachedPosts.at(-1).created_at, before_id: cachedPosts.at(-1).id })
       cachedPosts = [...cachedPosts, ...page]
     }
 
@@ -1636,7 +1637,7 @@ async function loadMorePosts() {
   setButtonBusy(elements.loadMoreButton, true, '加载中…')
 
   try {
-    const page = await backend.listPosts({ before: cachedPosts.at(-1).created_at })
+    const page = await backend.listPosts({ before: cachedPosts.at(-1).created_at, before_id: cachedPosts.at(-1).id })
     cachedPosts = [...cachedPosts, ...page]
     hasMorePosts = page.length === LIMITS.pageSize
     renderFeed(openPostIds())
