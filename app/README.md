@@ -64,7 +64,7 @@ Startup imports source members, invites, profiles and cohorts instead of seeding
 
 ## Existing action → HTTP mapping
 
-All 23 currently used data methods have Mongo implementations. The legacy unused `isMember` maps to the caller's membership status in the HTTP adapter. `getPost` is an additional direct-detail endpoint.
+All 25 currently used data methods have Mongo implementations. The legacy unused `isMember` maps to the caller's membership status in the HTTP adapter. `getPost` is an additional direct-detail endpoint.
 
 | Existing method | Endpoint |
 |---|---|
@@ -75,6 +75,8 @@ All 23 currently used data methods have Mongo implementations. The legacy unused
 | listCohorts | GET `/api/cohorts` |
 | uploadAvatar / clearAvatar | POST / DELETE `/api/profile/avatar` |
 | listPosts / createPost | GET / POST `/api/posts` |
+| searchPosts | GET `/api/posts/search?q=...` |
+| listMine | GET `/api/me/content` |
 | getPost / updatePost / deletePost | GET / PATCH / DELETE `/api/posts/{id}` |
 | createReply | POST `/api/posts/{id}/replies` |
 | updateReply / deleteReply | PATCH / DELETE `/api/replies/{id}` |
@@ -115,7 +117,7 @@ Integration tests create randomly named `sa_test_*` databases and drop those dat
 
 Each real API startup bulk-copies the nine Supabase business tables, referenced users' minimal identity fields, confirmed avatars and numeric sequence highwaters. Export is read-only and no Mongo action writes back to Supabase. All sandbox changes are discarded at the next startup. Auth passwords, sessions and refresh tokens remain solely in Supabase. This intentionally copies full business rows, including private contact fields, into the sandbox; normal API privacy checks still apply.
 
-Notifications, read markers, milestones, drafts and the loaded-feed search keep their current browser behavior. The new `getPost` API is available for direct clients; the UI retains its legacy deep-link navigation to preserve behavior across both backends. SQL RPCs such as `own_content_ids`, `op_reply_ids` and profile identity triggers become service rules, not generic RPC proxy endpoints.
+Notifications, read markers, milestones and drafts keep their current browser behavior. Search queries all Mongo posts and returns the newest 50 literal substring matches in title/body, including hydrated replies and vote/ownership state. `listMine` returns up to 100 of the caller's posts and 100 replies, including anonymous content, without exposing author IDs. Both actions require active membership and mirror the new Supabase `search_posts` / `my_content` RPCs. The `getPost` API is available for direct clients; the UI retains its existing deep-link navigation across both backends. SQL RPCs such as `own_content_ids`, `op_reply_ids` and profile identity triggers become service rules.
 
 The frontend Supabase data SDK is confined to `src/backend.js`. The HTTP adapter receives only `supabase.auth`, so it cannot use the data client's `.from()`, `.rpc()` or `.storage` methods. `test/data-access-boundary.test.js` guards application source against new SDK imports, direct Supabase REST URLs, RPC and Storage calls outside that file. The existing Pages CI runs this through `npm test`. Auth calls and public-avatar URL construction are intentionally permitted.
 
@@ -143,7 +145,7 @@ The existing GitHub Pages workflow is unchanged. `?backend=mongo` targets `https
 
 Before the parity work, the frontend suite covered pure helper functions, the HTTP adapter, design tokens and the source boundary; it did not test the production Supabase data adapter or execute Supabase SQL/RLS integration tests.
 
-The shared `test/fixtures/backend-contract.json` now lists the 23 current data actions with their HTTP methods, paths and response kinds. The Node suite calls the real injectable `createSupabaseBackend()` against a scripted SDK transport, checking RPC/table payloads, query composition, result shaping, error propagation, missing-row handling and the three-stage avatar flow. The Python suite consumes the same manifest and executes all corresponding HTTP actions against a real transaction-capable MongoDB database. It also verifies privacy, ownership, OP-anonymity matching and reply promotion.
+The shared `test/fixtures/backend-contract.json` lists the 25 current data actions with their HTTP methods, paths and response kinds. The Node suite calls the real injectable `createSupabaseBackend()` against a scripted SDK transport, checking RPC/table payloads, query composition, result shaping, error propagation, missing-row handling and the three-stage avatar flow. The Python suite consumes the same manifest and executes all corresponding HTTP actions against a real transaction-capable MongoDB database. It also verifies search semantics, personal-content scope, privacy, ownership, OP-anonymity matching and reply promotion.
 
 This establishes action-surface and observable behavior checks. It does **not** claim the mocked Supabase transport validates live PostgreSQL RLS, RPC bodies, triggers, OAuth consent or production data equivalence. Mongo integration tests and the backend CI use disposable `sa_test_*` databases; the application database is not used for test fixtures. The CI starts its own Mongo replica set and needs no cloud credentials.
 

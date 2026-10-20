@@ -156,6 +156,11 @@ export function createHttpBackend({ baseUrl, auth, fetchImpl = fetch }) {
       return (await request(`/api/posts${query.size ? `?${query}` : ''}`)) || []
     },
     async getPost(postId) { return request(`/api/posts/${id(postId)}`) },
+    async searchPosts(term) {
+      const query = new URLSearchParams({ q: String(term ?? '') })
+      return (await request(`/api/posts/search?${query}`)) || []
+    },
+    async listMine() { return (await request('/api/me/content')) || { posts: [], replies: [] } },
     async createPost(post) { await request('/api/posts', { method: 'POST', body: post }) },
     async updatePost(postId, post) { await request(`/api/posts/${id(postId)}`, { method: 'PATCH', body: post }) },
     async deletePost(postId) { await request(`/api/posts/${id(postId)}`, { method: 'DELETE' }) },

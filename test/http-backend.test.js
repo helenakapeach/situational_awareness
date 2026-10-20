@@ -66,6 +66,27 @@ test('maps API methods and sends avatar bytes with the expected content type', a
   assert.equal(calls[2].init.body, blob)
 })
 
+test('search and my content use only authenticated Mongo API routes with safe query encoding', async () => {
+  const calls = []
+  const posts = [{ id: 42, title: '工作', replies: [] }]
+  const mine = { posts: [{ id: 42 }], replies: [{ id: 9, post_id: 42 }] }
+  const backend = createHttpBackend({
+    baseUrl: 'https://api.test', auth: authStub({ access_token: 'supabase', user: { id: 'u1' } }).auth,
+    fetchImpl: async (url, init = {}) => {
+      if (url.endsWith('/api/auth/session')) return jsonResponse({ accessToken: 'app-jwt', expiresIn: 600, user: { id: 'u1' } })
+      calls.push({ url, init })
+      return jsonResponse(url.includes('/api/posts/search?') ? posts : mine)
+    },
+  })
+  const term = '工作 &?q=else#%_.*'
+  assert.deepEqual(await backend.searchPosts(term), posts)
+  assert.deepEqual(await backend.listMine(), mine)
+  assert.equal(new URL(calls[0].url).pathname, '/api/posts/search')
+  assert.deepEqual([...new URL(calls[0].url).searchParams], [['q', term]])
+  assert.equal(calls[1].url, 'https://api.test/api/me/content')
+  assert.ok(calls.every(({ init }) => init.headers.get('Authorization') === 'Bearer app-jwt'))
+})
+
 test('auth changes exchange before notifying the app and handle token changes', async () => {
   const supabase = authStub({ access_token: 'first', user: { id: 'u1' } })
   const exchanges = []

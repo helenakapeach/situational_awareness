@@ -13,6 +13,8 @@
     { "name": "clearAvatar", "method": "DELETE", "path": "/api/profile/avatar", "response": "object" },
     { "name": "redeemInviteCode", "method": "POST", "path": "/api/invite-redemptions", "response": "boolean" },
     { "name": "listPosts", "method": "GET", "path": "/api/posts?before={before}&before_id={before_id}", "response": "post_page" },
+    { "name": "searchPosts", "method": "GET", "path": "/api/posts/search?q={query}", "response": "post_page" },
+    { "name": "listMine", "method": "GET", "path": "/api/me/content", "response": "own_content" },
     { "name": "listLiked", "method": "GET", "path": "/api/likes", "response": "likes" },
     { "name": "createPost", "method": "POST", "path": "/api/posts", "response": "void" },
     { "name": "updatePost", "method": "PATCH", "path": "/api/posts/{post_id}", "response": "void" },

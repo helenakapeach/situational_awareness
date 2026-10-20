@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -17,6 +18,8 @@ PROFILE_FIELDS = (
 ).split()
 ROLES = {"committee", "mentor", "student", "other"}
 PAGE_SIZE = 20
+SEARCH_LIMIT = 50
+MY_CONTENT_LIMIT = 100
 
 
 def _now() -> datetime:
@@ -38,8 +41,10 @@ def create_indexes(db: Any) -> None:
     db.invite_codes.create_index("code", unique=True)
     db.posts.create_index("id", unique=True)
     db.posts.create_index([("created_at", DESCENDING), ("id", DESCENDING)])
+    db.posts.create_index([("author_id", ASCENDING), ("created_at", DESCENDING)])
     db.replies.create_index("id", unique=True)
     db.replies.create_index([("post_id", ASCENDING), ("created_at", ASCENDING), ("id", ASCENDING)])
+    db.replies.create_index([("author_id", ASCENDING), ("created_at", DESCENDING)])
     db.post_votes.create_index([("post_id", ASCENDING), ("user_id", ASCENDING)], unique=True)
     db.reply_votes.create_index([("reply_id", ASCENDING), ("user_id", ASCENDING)], unique=True)
     db.feedback.create_index("id", unique=True)
@@ -407,6 +412,10 @@ class BackendService:
             .sort([("created_at", DESCENDING), ("id", DESCENDING)])
             .limit(PAGE_SIZE)
         )
+        return self._hydrate_posts(posts)
+
+    def _hydrate_posts(self, posts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Keep feed and search thread privacy, votes and ownership identical."""
         result = []
         for post in posts:
             doc = self._serialize_content(post, "post")
@@ -425,6 +434,57 @@ class BackendService:
             doc["replies"].sort(key=lambda reply: (-reply["upvote_count"], reply["created_at"], reply["id"]))
             result.append(doc)
         return result
+
+    def search_posts(self, term: str | None) -> list[dict[str, Any]]:
+        """Find visible posts containing a literal, case-insensitive substring."""
+        self._member()
+        query = (term or "").strip(" ")
+        if not 1 <= len(query) <= 100:
+            return []
+
+        # Escaping keeps %, _, and regex punctuation literal, as in the SQL
+        # strpos implementation. Mongo regex matching is Unicode-aware, so
+        # CJK terms remain searchable without any special handling.
+        pattern = re.compile(re.escape(query), re.IGNORECASE)
+        posts = list(
+            self.db.posts.find({"$or": [{"title": pattern}, {"body": pattern}]}, {"_id": 0})
+            .sort("created_at", DESCENDING)
+            .limit(SEARCH_LIMIT)
+        )
+        return self._hydrate_posts(posts)
+
+    def list_mine(self) -> dict[str, list[dict[str, Any]]]:
+        """Return the caller's recent posts and replies without author identity."""
+        self._member()
+        posts = list(
+            self.db.posts.find(
+                {"author_id": self.user_id},
+                {"_id": 0, "id": 1, "title": 1, "created_at": 1, "is_anonymous": 1},
+            )
+            .sort("created_at", DESCENDING)
+            .limit(MY_CONTENT_LIMIT)
+        )
+        replies = []
+        for reply in (
+            self.db.replies.find(
+                {"author_id": self.user_id},
+                {
+                    "_id": 0,
+                    "id": 1,
+                    "post_id": 1,
+                    "body": 1,
+                    "created_at": 1,
+                    "is_anonymous": 1,
+                },
+            )
+            .sort("created_at", DESCENDING)
+            .limit(MY_CONTENT_LIMIT)
+        ):
+            parent = self.db.posts.find_one({"id": reply["post_id"]}, {"title": 1})
+            if parent:
+                reply["post_title"] = parent["title"]
+                replies.append(reply)
+        return {"posts": posts, "replies": replies}
 
     def get_post(self, post_id: int) -> dict[str, Any] | None:
         self._member()

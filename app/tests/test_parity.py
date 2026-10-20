@@ -1,6 +1,7 @@
 """Contract-driven checks shared with the frontend's Supabase-compatible adapter."""
 
 import json
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
 
@@ -59,7 +60,7 @@ def assert_response_shape(action, response):
     elif kind == "post_page":
         assert isinstance(value, list)
         assert all(isinstance(post, dict) and isinstance(post.get("replies"), list) for post in value)
-    elif kind == "likes":
+    elif kind in {"likes", "own_content"}:
         assert isinstance(value, dict) and set(value) == {"posts", "replies"}
         assert isinstance(value["posts"], list) and isinstance(value["replies"], list)
     else:
@@ -67,8 +68,8 @@ def assert_response_shape(action, response):
 
 
 def test_manifest_covers_all_non_deprecated_actions():
-    assert len(CONTRACT["actions"]) == 23
-    assert len({action["name"] for action in CONTRACT["actions"]}) == 23
+    assert len(CONTRACT["actions"]) == 25
+    assert len({action["name"] for action in CONTRACT["actions"]}) == 25
     assert "isMember" not in {action["name"] for action in CONTRACT["actions"]}
 
 
@@ -134,6 +135,7 @@ def test_every_backend_contract_action_succeeds_with_declared_shape(db):
             "avatar_bytes": avatar_bytes,
             "before": "2099-01-01T00:00:00Z",
             "before_id": 999999,
+            "query": "Contract",
             "created_post_id": None,
             "created_reply_id": None,
             "uploaded_avatar_id": None,
@@ -149,6 +151,7 @@ def test_every_backend_contract_action_succeeds_with_declared_shape(db):
                 "reply_id": context["seed_reply_id"],
                 "before": context["before"],
                 "before_id": context["before_id"],
+                "query": context["query"],
             }
             path = action["path"].format(**values)
             name = action["name"]
@@ -278,3 +281,175 @@ def test_anonymous_op_identity_and_reply_reparenting_match_legacy_rules(db):
             ).status_code
             == 404
         )
+
+
+def test_search_uses_literal_case_insensitive_substrings_and_caps_newest_results(db):
+    with TestClient(create_app(db)) as client:
+        owner = join(client, db, "search-owner")
+        other = join(client, db, "search-other")
+        for index in range(55):
+            response = client.post(
+                "/api/posts",
+                headers=owner,
+                json={
+                    "title": f"LimitNeedle {index:02d}",
+                    "body": "普通话正文",
+                    "is_anonymous": index == 54,
+                },
+            )
+            assert response.status_code == 201, response.text
+
+        latest_id = db.posts.find_one({"author_id": "search-owner", "title": "LimitNeedle 54"})["id"]
+        for index in range(55):
+            db.posts.update_one(
+                {"author_id": "search-owner", "title": f"LimitNeedle {index:02d}"},
+                {
+                    "$set": {
+                        "created_at": datetime(2026, 1, 1, tzinfo=timezone.utc) + timedelta(seconds=index)
+                    }
+                },
+            )
+        assert (
+            client.post(
+                f"/api/posts/{latest_id}/replies",
+                headers=owner,
+                json={"body": "Anonymous OP reply", "is_anonymous": True},
+            ).status_code
+            == 201
+        )
+        assert client.post(f"/api/posts/{latest_id}/vote", headers=other).status_code == 200
+        results = client.get("/api/posts/search?q=LiMiTnEeDl", headers=other)
+        assert results.status_code == 200, results.text
+        found = results.json()
+        assert len(found) == 50
+        assert found[0]["id"] == latest_id
+        assert all("replies" in post for post in found)
+        assert found[0]["author_name"] == "匿名成员"
+        assert "author_id" not in found[0]
+        assert found[0]["liked_by_me"] is True
+        assert found[0]["is_mine"] is False
+        assert found[0]["replies"][0]["is_op"] is True
+        assert found[0]["replies"][0]["is_mine"] is False
+        assert "author_id" not in found[0]["replies"][0]
+
+        # Query wildcards and regex syntax are plain characters, and CJK
+        # substrings use the same path as Latin text.
+        literal = client.post(
+            "/api/posts",
+            headers=owner,
+            json={"title": "Symbol %_ [x]", "body": "你好世界", "is_anonymous": True},
+        )
+        assert literal.status_code == 201, literal.text
+        assert len(client.get("/api/posts/search?q=%25_", headers=other).json()) == 1
+        assert len(client.get("/api/posts/search", params={"q": "[x]"}, headers=other).json()) == 1
+        assert client.get("/api/posts/search", params={"q": ".*"}, headers=other).json() == []
+        assert len(client.get("/api/posts/search?q=%E4%BD%A0%E5%A5%BD", headers=other).json()) == 1
+        assert client.get("/api/posts/search?q=%20%20%20", headers=other).json() == []
+        assert client.get("/api/posts/search?q=" + "x" * 101, headers=other).json() == []
+
+        assert client.get("/api/posts/search?q=needle").status_code == 401
+        db.members.update_one({"user_id": "search-other"}, {"$set": {"is_disabled": True}})
+        assert client.get("/api/posts/search?q=needle", headers=other).status_code == 403
+
+
+def test_list_mine_returns_only_callers_owned_content_and_hides_identity(db):
+    with TestClient(create_app(db)) as client:
+        owner = join(client, db, "mine-owner")
+        other = join(client, db, "mine-other")
+        post_response = client.post(
+            "/api/posts",
+            headers=owner,
+            json={"title": "My anonymous post", "body": "post body", "is_anonymous": True},
+        )
+        assert post_response.status_code == 201, post_response.text
+        post_id = db.posts.find_one({"author_id": "mine-owner"})["id"]
+        assert (
+            client.post("/api/posts", headers=other, json={"title": "Their post", "body": "x"}).status_code
+            == 201
+        )
+        own_reply = client.post(
+            f"/api/posts/{post_id}/replies",
+            headers=owner,
+            json={"body": "My anonymous reply", "is_anonymous": True},
+        )
+        assert own_reply.status_code == 201, own_reply.text
+        reply_id = db.replies.find_one({"author_id": "mine-owner"})["id"]
+
+        response = client.get("/api/me/content", headers=owner)
+        assert response.status_code == 200, response.text
+        mine = response.json()
+        assert [post["id"] for post in mine["posts"]] == [post_id]
+        assert [reply["id"] for reply in mine["replies"]] == [reply_id]
+        assert mine["posts"][0]["title"] == "My anonymous post"
+        assert mine["posts"][0]["is_anonymous"] is True
+        assert mine["replies"][0]["post_title"] == "My anonymous post"
+        assert mine["replies"][0]["body"] == "My anonymous reply"
+        assert all(
+            "author_id" not in item and "author_name" not in item for group in mine.values() for item in group
+        )
+
+        assert client.get("/api/me/content").status_code == 401
+        db.members.update_one({"user_id": "mine-owner"}, {"$set": {"is_disabled": True}})
+        assert client.get("/api/me/content", headers=owner).status_code == 403
+
+
+def test_list_mine_limits_each_group_to_100_newest_and_excludes_other_authors(db):
+    with TestClient(create_app(db)) as client:
+        owner = join(client, db, "bounded-owner")
+        base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        db.posts.insert_many(
+            [
+                {
+                    "id": index,
+                    "author_id": "bounded-owner",
+                    "title": f"Post {index}",
+                    "created_at": base + timedelta(seconds=index),
+                    "is_anonymous": index % 2 == 0,
+                }
+                for index in range(1, 106)
+            ]
+        )
+        db.replies.insert_many(
+            [
+                {
+                    "id": index,
+                    "post_id": 1,
+                    "author_id": "bounded-owner",
+                    "body": f"Reply {index}",
+                    "created_at": base + timedelta(seconds=index),
+                    "is_anonymous": index % 2 == 0,
+                }
+                for index in range(1, 106)
+            ]
+        )
+        db.posts.insert_one(
+            {
+                "id": 999,
+                "author_id": "another-user",
+                "title": "Other's post",
+                "created_at": base + timedelta(days=1),
+            }
+        )
+        db.replies.insert_one(
+            {
+                "id": 999,
+                "post_id": 1,
+                "author_id": "another-user",
+                "body": "Other's reply",
+                "created_at": base + timedelta(days=1),
+            }
+        )
+        response = client.get("/api/me/content", headers=owner)
+        assert response.status_code == 200, response.text
+        mine = response.json()
+        assert [item["id"] for item in mine["posts"]] == list(range(105, 5, -1))
+        assert [item["id"] for item in mine["replies"]] == list(range(105, 5, -1))
+        assert set(mine["posts"][0]) == {"id", "title", "created_at", "is_anonymous"}
+        assert set(mine["replies"][0]) == {
+            "id",
+            "post_id",
+            "body",
+            "created_at",
+            "is_anonymous",
+            "post_title",
+        }

@@ -159,8 +159,19 @@
         </div>
 
         <div class="account-menu">
-          <button id="feedback-button" class="text-button" type="button" aria-haspopup="dialog" aria-controls="feedback-dialog">
-            反馈
+          <button
+            id="feedback-button"
+            class="icon-button"
+            type="button"
+            aria-label="反馈"
+            title="反馈"
+            aria-haspopup="dialog"
+            aria-controls="feedback-dialog"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4.5 5.5h15a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H10l-4.5 3.5v-3.5h-1a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1Z" />
+              <path d="M8 10h8M8 13h5" />
+            </svg>
           </button>
           <div class="notification-menu">
             <button
@@ -291,6 +302,12 @@
             <p class="trust-line">登录身份：<span id="account-name" class="account-name"></span></p>
           </header>
           <div id="profile-panel"></div>
+          <section id="my-content" class="my-content" aria-labelledby="my-content-title">
+            <h2 id="my-content-title">我的讨论</h2>
+            <p class="trust-line">匿名发的也在这里，只有你自己看得到。</p>
+            <div id="my-content-status" class="feed-status" role="status" hidden></div>
+            <div id="my-content-list"></div>
+          </section>
           <section id="admin-tools" hidden>
             <h2>管理员</h2>
             <p>可直接删除讨论和回复。停用账号不会删除其已有内容。</p>

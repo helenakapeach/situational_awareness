@@ -204,6 +204,14 @@ def create_app(db=None) -> FastAPI:
             before = before.astimezone(timezone.utc)
         return svc.list_posts(before=before, before_id=before_id)
 
+    @application.get("/api/posts/search")
+    def search_posts(q: str = "", svc=Depends(service)):
+        return svc.search_posts(q)
+
+    @application.get("/api/me/content")
+    def my_content(svc=Depends(service)):
+        return svc.list_mine()
+
     @application.get("/api/posts/{post_id}")
     def post(post_id: int, svc=Depends(service)):
         result = svc.get_post(post_id)

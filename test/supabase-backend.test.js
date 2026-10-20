@@ -142,6 +142,46 @@ test('post pages strip vote relations and derive ownership, OP, and stable reply
   assert.ok(mock.calls.some((call) => call.table === 'posts' && call.method === 'lt' && call.args[0] === 'created_at'))
 })
 
+test('search hydrates full matching threads and my content retains its scoped RPC shape', async () => {
+  const mine = { posts: [{ id: 9, title: 'Own anonymous post', is_anonymous: true }], replies: [{ id: 20, post_id: 9, body: 'Own reply', post_title: 'Thread' }] }
+  const mock = createSupabaseMock({
+    rpc: {
+      search_posts: { data: [9], error: null },
+      own_content_ids: { data: { posts: [9], replies: [20] }, error: null },
+      op_reply_ids: { data: [20], error: null },
+      my_content: { data: mine, error: null },
+    },
+    tables: {
+      posts: [{ data: [{ id: 9, title: '工作', post_votes: [{ post_id: 9 }] }], error: null }],
+      replies: [{ data: [{ id: 20, post_id: 9, body: 'Reply', reply_votes: [] }], error: null }],
+    },
+  })
+  const api = backend(mock)
+  const [post] = await api.searchPosts('工作 %_.*')
+  assert.equal(post.is_mine, true)
+  assert.equal(post.liked_by_me, true)
+  assert.equal(post.replies[0].is_mine, true)
+  assert.equal(post.replies[0].is_op, true)
+  assert.equal('post_votes' in post, false)
+  assert.equal('reply_votes' in post.replies[0], false)
+  assert.deepEqual(mock.calls.find(({ name }) => name === 'search_posts').args, { p_query: '工作 %_.*' })
+  assert.ok(mock.calls.some(({ table, method, args }) => table === 'posts' && method === 'in' && args[0] === 'id' && args[1][0] === 9))
+  assert.deepEqual(await api.listMine(), mine)
+})
+
+test('empty and failed search/my-content RPCs preserve expected empty results and errors', async () => {
+  const empty = createSupabaseMock()
+  assert.deepEqual(await backend(empty).searchPosts(''), [])
+  assert.equal(empty.calls.some(({ type }) => type === 'query'), false)
+  assert.deepEqual(await backend(empty).listMine(), { posts: [], replies: [] })
+  const failed = createSupabaseMock({ rpc: {
+    search_posts: { data: null, error: new Error('search failed') },
+    my_content: { data: null, error: new Error('my content failed') },
+  } })
+  await assert.rejects(backend(failed).searchPosts('query'), /search failed/)
+  await assert.rejects(backend(failed).listMine(), /my content failed/)
+})
+
 test('liked content joins titles and sorts both result sets newest first', async () => {
   const mock = createSupabaseMock({ tables: {
     post_votes: [{ data: [
