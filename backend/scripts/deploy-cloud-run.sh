@@ -59,11 +59,11 @@ gcloud secrets add-iam-policy-binding "${SECRET_ID}" --project "${PROJECT_ID}" \
   --condition=None --quiet >/dev/null
 
 gcloud run deploy "${SERVICE_NAME}" --project "${PROJECT_ID}" --region "${REGION}" \
-  --platform managed --source "${BACKEND_DIR}" --port 8080 \
+  --platform managed --source "${BACKEND_DIR}" --port 26276 \
   --service-account "${RUNTIME_SERVICE_ACCOUNT}" \
   --memory "${MEMORY:-512Mi}" --cpu "${CPU:-1}" \
   --min-instances "${MIN_INSTANCES:-0}" --max-instances 1 --max 1 \
-  --startup-probe 'httpGet.path=/health,httpGet.port=8080,periodSeconds=2,timeoutSeconds=2,failureThreshold=120' \
+  --startup-probe 'httpGet.path=/health,httpGet.port=26276,periodSeconds=2,timeoutSeconds=2,failureThreshold=120' \
   --set-secrets "/secrets/.env=${SECRET_ID}:latest" \
   --allow-unauthenticated --quiet
 

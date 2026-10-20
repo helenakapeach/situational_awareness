@@ -2,7 +2,7 @@
 
 普通访问的所有业务操作继续使用 Supabase，`.github/workflows/deploy-pages.yml` 保持不变。只有显式添加 `?backend=mongo` 才会选择 FastAPI；API 出错时不会回退到 Supabase。两种模式的 Google 登录都由 Supabase Auth 处理。Mongo 模式的业务操作、成员检查、头像上传和管理功能只访问 MongoDB。
 
-专用 Cloud Run 服务为 `linghang-main-app`，沙箱 API 默认地址是 `https://linghang-main-app-711094273715.us-east1.run.app`。本地可在根目录 `.env` 设置 `VITE_API_BASE_URL=http://localhost:8000`；该地址只在 `?backend=mongo` 时使用，URL 参数不能指定任意 API 地址。
+专用 Cloud Run 服务为 `linghang-main-app`，沙箱 API 默认地址是 `https://linghang-main-app-711094273715.us-east1.run.app`。本地可在根目录 `.env` 设置 `VITE_API_BASE_URL=http://localhost:26276`；该地址只在 `?backend=mongo` 时使用，URL 参数不能指定任意 API 地址。
 
 ## 每次 API 启动
 

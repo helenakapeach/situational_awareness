@@ -26,7 +26,7 @@ test('exchanges Supabase session lazily and sends the app JWT on API requests', 
   const supabase = authStub({ access_token: 'supabase-1', user: { id: 'u1', email: 'a@b.test', user_metadata: { name: 'A' } } })
   const calls = []
   const backend = createHttpBackend({
-    baseUrl: 'http://localhost:8000/', auth: supabase.auth,
+    baseUrl: 'http://localhost:26276/', auth: supabase.auth,
     fetchImpl: async (url, init = {}) => {
       calls.push({ url, init })
       return url.endsWith('/api/auth/session')
@@ -35,7 +35,7 @@ test('exchanges Supabase session lazily and sends the app JWT on API requests', 
     },
   })
 
-  assert.equal(backend.storageBase, 'http://localhost:8000')
+  assert.equal(backend.storageBase, 'http://localhost:26276')
   const session = await backend.getSession()
   assert.equal(session.app_access_token, 'app-jwt')
   assert.deepEqual(await backend.memberAccess(), { is_member: true })

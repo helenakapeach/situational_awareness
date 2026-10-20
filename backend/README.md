@@ -58,7 +58,7 @@ openssl rand -hex 32
 # SUPABASE_DB_URL 填入该项目的 PostgreSQL direct/session-pooler 连接。
 # MONGODB_DATABASE 固定为 linghang_main_app_sandbox，其他目标会被拒绝。
 docker compose up -d --wait
-uv run --extra migration uvicorn app.main:create_app --factory --workers 1 --reload --port 8000
+uv run --extra migration uvicorn app.main:create_app --factory --workers 1 --reload --port 26276
 ```
 
 MongoDB **必须支持事务**：使用上述本地单节点 replica set 或 MongoDB Atlas。独立 `mongod` 会在启动时被拒绝。本地容器只绑定 loopback 端口 27017，仅用于开发。部署时使用启用认证和 TLS 的 MongoDB；不要将开发容器暴露到互联网。事务行为遵循 [PyMongo transaction API](https://www.mongodb.com/docs/languages/python/pymongo-driver/current/crud/transactions/)。
@@ -66,12 +66,12 @@ MongoDB **必须支持事务**：使用上述本地单节点 replica set 或 Mon
 在仓库根目录 `.env` 中保留现有的 `VITE_SUPABASE_URL` 和 `VITE_SUPABASE_PUBLISHABLE_KEY`，并添加：
 
 ```dotenv
-VITE_API_BASE_URL=http://localhost:8000
+VITE_API_BASE_URL=http://localhost:26276
 ```
 
 重启 Vite。打开 `http://localhost:5173/?backend=mongo` 访问本地 API，或打开 `http://localhost:5173/` 使用 Supabase。`?demo=1` 仍启用浏览器演示模式。`VITE_API_BASE_URL` 只覆盖显式选择的 API 地址，不会切换普通访客；未设置时，`?backend=mongo` 使用专用的 `linghang-main-app` 沙箱地址。OAuth 跳转和复制的帖子链接会保留 Mongo 参数。Mongo 模式的草稿、未读标记和目标帖子使用独立浏览器存储键；主题与 Supabase 登录共用。
 
-API 文档位于 `http://localhost:8000/docs`。`/health` 仅在当前代次验证就绪且 Mongo 可连接时成功。启动行为、重置隔离和部署前提见 [ROLLOUT.md](./ROLLOUT.md)。
+API 文档位于 `http://localhost:26276/docs`。`/health` 仅在当前代次验证就绪且 Mongo 可连接时成功。启动行为、重置隔离和部署前提见 [ROLLOUT.md](./ROLLOUT.md)。
 
 ## 身份验证
 
