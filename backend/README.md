@@ -7,23 +7,44 @@ UI → src/http-backend.js → FastAPI routes → BackendService → MongoDB
 Google/Supabase Auth → 验证身份交换 → 独立的应用 JWT
 ```
 
-`sa_backend/models.py` 校验请求字段；`main.py` 处理 HTTP；`services.py` 实现成员权限、隐私、CRUD、投票和管理操作。业务方法不依赖 DOM 或浏览器。同步 PyMongo 在 FastAPI worker pool 中运行。API 模式下，MongoDB 是唯一业务数据存储。
+`app/models.py` 校验请求字段；`main.py` 处理 HTTP；`services.py` 实现成员权限、隐私、CRUD、投票和管理操作。业务方法不依赖 DOM 或浏览器。同步 PyMongo 在 FastAPI worker pool 中运行。API 模式下，MongoDB 是唯一业务数据存储。
+
+## 目录与命名规则
+
+```text
+backend/                 # 后端项目根目录，放置依赖、配置和部署文件
+  pyproject.toml
+  uv.lock
+  app/                   # Python 包，统一通过 app.* 导入
+    __init__.py
+    main.py              # FastAPI 入口与路由，提供 create_app 工厂
+    config.py            # 运行时配置
+    models.py            # Pydantic 请求模型
+    services.py          # 业务操作
+    supabase_dump.py     # 只读导出来源快照
+    migration.py         # 校验快照、适配字段、导入和核对 Mongo
+    sandbox.py           # 启动重建、租约及新旧沙箱代次切换
+  tests/                 # 后端测试
+  scripts/               # 可重复使用的部署工具
+```
+
+`backend` 表示仓库中的项目目录，不作为 Python 导入前缀；`app` 才是 Python 包名。从 `backend/` 工作目录启动 `app.main:create_app`，代码使用 `from app.services import BackendService`，包内使用相对导入。模块、函数和变量使用 `snake_case`，类使用 `PascalCase`，常量使用 `UPPER_SNAKE_CASE`。新增模块按职责命名，不再添加项目缩写前缀。
 
 ## 本地运行
 
 需要 Python 3.12+、uv 和 Docker，或已有 MongoDB replica set。
 
 ```sh
-cd app
+cd backend
 uv sync --locked --extra migration
 cp .env.example .env
 openssl rand -hex 32
-# 将生成的值填入 app/.env 的 APP_SESSION_SECRET。
+# 将生成的值填入 backend/.env 的 APP_SESSION_SECRET。
 # SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY 使用现有 Google Auth 项目配置。
 # SUPABASE_DB_URL 填入该项目的 PostgreSQL direct/session-pooler 连接。
 # MONGODB_DATABASE 固定为 linghang_main_app_sandbox，其他目标会被拒绝。
 docker compose up -d --wait
-uv run --extra migration uvicorn sa_backend.main:create_app --factory --workers 1 --reload --port 8000
+uv run --extra migration uvicorn app.main:create_app --factory --workers 1 --reload --port 8000
 ```
 
 MongoDB **必须支持事务**：使用上述本地单节点 replica set 或 MongoDB Atlas。独立 `mongod` 会在启动时被拒绝。本地容器只绑定 loopback 端口 27017，仅用于开发。部署时使用启用认证和 TLS 的 MongoDB；不要将开发容器暴露到互联网。事务行为遵循 [PyMongo transaction API](https://www.mongodb.com/docs/languages/python/pymongo-driver/current/crud/transactions/)。
@@ -55,9 +76,9 @@ API 文档位于 `http://localhost:8000/docs`。`/health` 仅在当前代次验�
 先登录以创建用户身份。使用管理员 CLI 创建邀请，再在 UI 中兑换。只有成员记录存在后，才授予管理员权限：
 
 ```sh
-cd app
-uv run python -m sa_backend.admin create-invite YOUR-CODE --max-uses 50
-uv run python -m sa_backend.admin grant-admin admin@example.com
+cd backend
+uv run python -m app.admin create-invite YOUR-CODE --max-uses 50
+uv run python -m app.admin grant-admin admin@example.com
 ```
 
 启动时会导入来源成员、邀请、资料和 cohort，不会创建替代数据。管理员命令会解析当前就绪的沙箱代次，其更改会在下次启动时丢弃。命令需要直接 Mongo 访问权限，不会开放可提升权限的 HTTP 路由。
@@ -111,13 +132,13 @@ Supabase 前端数据 SDK 仅位于 `src/backend.js`。HTTP adapter 只接收 `s
 部署方式遵循 `~/gitSpot/linghang-appt/backend/scripts/deploy-cloud-run.sh`：复用现有 gcloud 登录及项目/区域，为本应用创建专用运行时 service account，并将运行时配置保存到独立的 `linghang-main-app-env` Secret Manager secret，挂载在 `/secrets/.env`。
 
 ```sh
-# 在 app/.env 中配置所需凭据，不要打印或复制真实 secret 到文档。
-uv run --project app --extra migration python app/scripts/check-sandbox-config.py --env-file app/.env
+# 在 backend/.env 中配置所需凭据，不要打印或复制真实 secret 到文档。
+uv run --project backend --extra migration python backend/scripts/check-sandbox-config.py --env-file backend/.env
 PROJECT_ID=project-d65805f6-4709-4498-9df \
-  REGION=us-east1 app/scripts/deploy-cloud-run.sh
+  REGION=us-east1 backend/scripts/deploy-cloud-run.sh
 ```
 
-`app/.env` 已从 Git、Docker 和 GCloud source uploader 排除。凭据会直接上传至 Secret Manager，不会写入镜像。Cloud Run IAM 允许公开调用 API，以便 Google 登录和 token 交换可达；受保护业务路由仍要求应用 JWT 和 Mongo 成员检查。
+`backend/.env` 已从 Git、Docker 和 GCloud source uploader 排除。凭据会直接上传至 Secret Manager，不会写入镜像。Cloud Run IAM 允许公开调用 API，以便 Google 登录和 token 交换可达；受保护业务路由仍要求应用 JWT 和 Mongo 成员检查。
 
 现有 GitHub Pages workflow 未更改。`?backend=mongo` 默认访问 `https://linghang-main-app-711094273715.us-east1.run.app`，生产前端构建不需要新增变量。该 Cloud Run 服务是本项目独立的 Mongo 沙箱。部署不会让普通访客离开 Supabase。部署脚本会在云端变更前检查沙箱配置，最大实例数固定为 1，并在启动导入后等待 `/health` 就绪。每次冷启动、重启和本地 reload 都会重建沙箱。
 

@@ -5,9 +5,9 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from sa_backend.auth import create_app_session_token
-from sa_backend.config import get_settings
-from sa_backend.main import create_app
+from app.auth import create_app_session_token
+from app.config import get_settings
+from app.main import create_app
 
 
 @pytest.fixture
@@ -60,7 +60,7 @@ def test_route_auth_and_identity_exchange(client, db, monkeypatch):
             },
         )
 
-    monkeypatch.setattr("sa_backend.auth.httpx.get", get)
+    monkeypatch.setattr("app.auth.httpx.get", get)
     response = client.post("/api/auth/session", json={"access_token": "verified-by-provider"})
     assert response.status_code == 200, response.text
     data = response.json()
@@ -225,7 +225,7 @@ def test_validation_and_cors(client, db):
 def test_real_app_startup_connects_to_replica_set(db, monkeypatch):
     import os
 
-    from sa_backend import main
+    from app import main
 
     monkeypatch.setenv("MONGODB_URI", os.environ["TEST_MONGODB_URI"])
     monkeypatch.setenv("MONGODB_DATABASE", db.name)

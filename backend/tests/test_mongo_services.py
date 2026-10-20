@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import pytest
 from fastapi import HTTPException
 
-from sa_backend.services import BackendService, bootstrap_indexes
+from app.services import BackendService, bootstrap_indexes
 
 
 def add_member(db, user_id, *, admin=False, disabled=False, name=None, email=None, avatar=None):

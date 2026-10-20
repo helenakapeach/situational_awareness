@@ -9,9 +9,9 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from sa_backend.auth import create_app_session_token
-from sa_backend.config import get_settings
-from sa_backend.main import create_app
+from app.auth import create_app_session_token
+from app.config import get_settings
+from app.main import create_app
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = json.loads((ROOT / "test/fixtures/backend-contract.json").read_text())

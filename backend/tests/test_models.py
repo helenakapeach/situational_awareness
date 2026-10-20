@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from sa_backend.models import PostCreate, PostUpdate, ProfileUpdate, ReplyCreate, SessionRequest
+from app.models import PostCreate, PostUpdate, ProfileUpdate, ReplyCreate, SessionRequest
 
 
 def test_payload_normalization_and_safe_field_allowlists():

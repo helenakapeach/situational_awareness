@@ -4,8 +4,8 @@ from uuid import uuid4
 import pytest
 from pymongo import MongoClient
 
-from sa_backend.config import get_settings
-from sa_backend.services import bootstrap_indexes
+from app.config import get_settings
+from app.services import bootstrap_indexes
 
 
 @pytest.fixture

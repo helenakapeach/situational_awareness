@@ -8,7 +8,7 @@
 
 1. 要求 `MONGODB_DATABASE=linghang_main_app_sandbox` 和已配置的 `SUPABASE_DB_URL`，并连接支持事务的 Mongo replica set。
 2. 在 `linghang_main_app_sandbox_control.startup` 获取可续期的重置租约。新重置登记后，旧实例立即停止接受请求；并发重置会被拒绝，崩溃的重置可在租约到期后被替换。
-3. 通过 `sa_backend/supabase_dump.py` 只读导出 PostgreSQL 快照，并用 GET 下载所引用的头像。导入前校验完整临时快照。不会修改 Supabase 表、RPC、策略、用户凭据或部署。
+3. 通过 `app/supabase_dump.py` 只读导出 PostgreSQL 快照，并用 GET 下载所引用的头像。导入前校验完整临时快照。不会修改 Supabase 表、RPC、策略、用户凭据或部署。
 4. 导入名称为 `linghang_main_app_sandbox_<random-generation>` 的全新空数据库，保留 ID、权限、关系、头像和 sequence 高水位，并验证导入内容。
 5. 仅当当前进程仍持有未过期租约时，才原子地将代次标记为就绪。进程只服务自己的代次；随后按精确沙箱名称规则删除旧代次，避免迟到请求或过期导入器修改新副本。
 
@@ -20,17 +20,17 @@
 
 ## 配置与部署
 
-运行时变量名见 `app/.env.example`。可以复用现有 appointments Mongo 集群凭据，但必须使用独立的沙箱数据库名称。Mongo URI 可以参考 `~/gitSpot/linghang-appt/backend/.env` 中的连接配置；不要把实际凭据打印到终端、文档或提交中。应用需要自己的随机 `APP_SESSION_SECRET` 和沙箱命名空间 `linghang_main_app_sandbox`。
+运行时变量名见 `backend/.env.example`。可以复用现有 appointments Mongo 集群凭据，但必须使用独立的沙箱数据库名称。Mongo URI 可以参考 `~/gitSpot/linghang-appt/backend/.env` 中的连接配置；不要把实际凭据打印到终端、文档或提交中。应用需要自己的随机 `APP_SESSION_SECRET` 和沙箱命名空间 `linghang_main_app_sandbox`。
 
 `SUPABASE_DB_URL` 必须指向当前生产 Supabase 项目的 PostgreSQL direct/session-pooler 连接，并允许读取九张公开业务表、被引用的 `auth.users` 身份列、`storage.objects` 元数据和 identity sequence。可用时使用只读数据库角色。公开浏览器密钥权限不足。只有需要认证式头像 GET 下载时才配置 `SUPABASE_SERVICE_ROLE_KEY`；公开头像不需要服务端密钥。
 
 部署脚本会在修改云资源或上传密钥前运行 `check-sandbox-config.py`，拒绝错误的 Mongo 命名空间或缺失的来源配置。镜像包含 PostgreSQL 驱动。凭据保留在私有 env 文件和独立 Secret Manager secret 中，不进入 Git 或前端变量。现有 Pages/Supabase 部署流程保持不变。
 
 ```sh
-# 在 app/.env 中配置运行时变量，并确认 MONGODB_DATABASE=linghang_main_app_sandbox。
-uv run --project app --extra migration python app/scripts/check-sandbox-config.py --env-file app/.env
+# 在 backend/.env 中配置运行时变量，并确认 MONGODB_DATABASE=linghang_main_app_sandbox。
+uv run --project backend --extra migration python backend/scripts/check-sandbox-config.py --env-file backend/.env
 PROJECT_ID=project-d65805f6-4709-4498-9df REGION=us-east1 \
-  app/scripts/deploy-cloud-run.sh
+  backend/scripts/deploy-cloud-run.sh
 ```
 
 启动探针最多等待 240 秒完成重建。若数据超过启动时限，或导出期间头像发生变化或消失，启动会失败，需要重试；系统不会启用不完整的沙箱。SQL 导出使用单个 `REPEATABLE READ` 快照，Storage 文件则单独获取。此非生产发布期间，生产写入仍保持启用。

@@ -8,8 +8,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from sa_backend.config import Settings  # noqa: E402
-from sa_backend.sandbox import SANDBOX_DATABASE  # noqa: E402
+from app.config import Settings  # noqa: E402
+from app.sandbox import SANDBOX_DATABASE  # noqa: E402
 
 
 def main():

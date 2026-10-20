@@ -7,7 +7,7 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
 Deploy linghang-main-app using the existing gcloud login.
 Required: PROJECT_ID
 Optional: REGION (us-east1), SERVICE_NAME (linghang-main-app),
-ENV_FILE (app/.env), SECRET_ID (SERVICE_NAME-env), SERVICE_ACCOUNT,
+ENV_FILE (backend/.env), SECRET_ID (SERVICE_NAME-env), SERVICE_ACCOUNT,
 SYNC_SECRET (true), ENABLE_APIS (true),
 MEMORY (512Mi), CPU (1), MIN_INSTANCES (0). Maximum instances is fixed at 1.
 The env file is mounted from Secret Manager at /secrets/.env.
@@ -19,18 +19,18 @@ USAGE
 fi
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-APP_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+BACKEND_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 PROJECT_ID="${PROJECT_ID:?PROJECT_ID is required}"
 REGION="${REGION:-us-east1}"
 SERVICE_NAME="${SERVICE_NAME:-linghang-main-app}"
 SECRET_ID="${SECRET_ID:-${SERVICE_NAME}-env}"
-ENV_FILE="${ENV_FILE:-${APP_DIR}/.env}"
+ENV_FILE="${ENV_FILE:-${BACKEND_DIR}/.env}"
 
 command -v gcloud >/dev/null 2>&1 || { echo 'gcloud is required.' >&2; exit 1; }
 command -v uv >/dev/null 2>&1 || { echo 'uv is required for the configuration preflight.' >&2; exit 1; }
-[[ -f "${ENV_FILE}" ]] || { echo 'Create app/.env before deploying.' >&2; exit 1; }
+[[ -f "${ENV_FILE}" ]] || { echo 'Create backend/.env before deploying.' >&2; exit 1; }
 [[ "${MAX_INSTANCES:-1}" == "1" ]] || { echo 'This disposable sandbox requires MAX_INSTANCES=1.' >&2; exit 1; }
-uv run --project "${APP_DIR}" --locked --extra migration python \
+uv run --project "${BACKEND_DIR}" --locked --extra migration python \
   "${SCRIPT_DIR}/check-sandbox-config.py" --env-file "${ENV_FILE}"
 
 if [[ "${ENABLE_APIS:-true}" == "true" ]]; then
@@ -59,7 +59,7 @@ gcloud secrets add-iam-policy-binding "${SECRET_ID}" --project "${PROJECT_ID}" \
   --condition=None --quiet >/dev/null
 
 gcloud run deploy "${SERVICE_NAME}" --project "${PROJECT_ID}" --region "${REGION}" \
-  --platform managed --source "${APP_DIR}" --port 8080 \
+  --platform managed --source "${BACKEND_DIR}" --port 8080 \
   --service-account "${RUNTIME_SERVICE_ACCOUNT}" \
   --memory "${MEMORY:-512Mi}" --cpu "${CPU:-1}" \
   --min-instances "${MIN_INSTANCES:-0}" --max-instances 1 --max 1 \

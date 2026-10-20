@@ -6,8 +6,8 @@ from uuid import uuid4
 
 import pytest
 
-from sa_backend.migration import MigrationError, import_bundle, load_bundle, validate_bundle, verify_bundle
-from sa_backend.services import bootstrap_indexes, create_indexes
+from app.migration import MigrationError, import_bundle, load_bundle, validate_bundle, verify_bundle
+from app.services import bootstrap_indexes, create_indexes
 
 USER1 = "00000000-0000-4000-8000-000000000001"
 USER2 = "00000000-0000-4000-8000-000000000002"
@@ -131,7 +131,7 @@ def test_validation_rejects_traversal_or_orphaned_references(tmp_path):
     bundle = load_bundle(path2)
     rows2 = {key: [dict(item) for item in values] for key, values in bundle.documents.items()}
     rows2["replies"][0]["post_id"] = 99
-    from sa_backend.migration import MigrationBundle
+    from app.migration import MigrationBundle
 
     with pytest.raises(MigrationError, match="missing post"):
         validate_bundle(MigrationBundle(bundle.manifest, rows2, bundle.avatars))
@@ -140,7 +140,7 @@ def test_validation_rejects_traversal_or_orphaned_references(tmp_path):
 def test_validation_rejects_auth_secrets_and_bad_sequence(tmp_path):
     path, _, _, _, _ = make_bundle(tmp_path)
     bundle = load_bundle(path)
-    from sa_backend.migration import MigrationBundle
+    from app.migration import MigrationBundle
 
     docs = {key: [dict(row) for row in value] for key, value in bundle.documents.items()}
     docs["users"][0]["encrypted_password"] = "must never import"
@@ -247,7 +247,7 @@ def test_apply_resumes_same_snapshot_after_interruption(db, tmp_path):
 def test_validate_rejects_bad_business_ids_and_unsafe_keys(tmp_path):
     path, _, _, _, _ = make_bundle(tmp_path)
     bundle = load_bundle(path)
-    from sa_backend.migration import MigrationBundle
+    from app.migration import MigrationBundle
 
     docs = {key: [dict(row) for row in value] for key, value in bundle.documents.items()}
     docs["feedback"][0]["id"] = True
@@ -280,7 +280,7 @@ def test_validate_rejects_bad_business_ids_and_unsafe_keys(tmp_path):
 def test_validate_rejects_bad_booleans_and_conflicting_feedback_identity(tmp_path):
     path, _, _, _, _ = make_bundle(tmp_path)
     bundle = load_bundle(path)
-    from sa_backend.migration import MigrationBundle
+    from app.migration import MigrationBundle
 
     docs = {key: [dict(row) for row in value] for key, value in bundle.documents.items()}
     docs["posts"][0]["is_anonymous"] = "false"

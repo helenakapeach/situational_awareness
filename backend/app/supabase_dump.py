@@ -224,6 +224,8 @@ def export_from_postgres(database_url: str, output: Path, **kwargs) -> dict:
         import psycopg
         from psycopg.rows import dict_row
     except ImportError as exc:
-        raise MigrationError("Install the migration extra: uv sync --project app --extra migration") from exc
+        raise MigrationError(
+            "Install the migration extra: uv sync --project backend --extra migration"
+        ) from exc
     with psycopg.connect(database_url, row_factory=dict_row, connect_timeout=15) as connection:
         return export_bundle(connection, output, **kwargs)

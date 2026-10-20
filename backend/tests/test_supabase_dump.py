@@ -15,8 +15,8 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from sa_backend.migration import MigrationError, load_bundle
-from sa_backend.supabase_dump import export_bundle, json_value
+from app.migration import MigrationError, load_bundle
+from app.supabase_dump import export_bundle, json_value
 
 
 @pytest.fixture
@@ -348,8 +348,8 @@ def _source_state(psycopg, database_url):
 
 def test_exported_snapshot_imports_and_verifies_through_services(source_database, db, tmp_path):
     """Use both real databases and the runtime migration services with a fresh namespace."""
-    from sa_backend.migration import import_bundle, verify_bundle
-    from sa_backend.services import BackendService, bootstrap_indexes
+    from app.migration import import_bundle, verify_bundle
+    from app.services import BackendService, bootstrap_indexes
 
     psycopg, source_url = source_database
     output = tmp_path / "end-to-end"

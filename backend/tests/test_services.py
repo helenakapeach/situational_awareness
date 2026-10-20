@@ -1,7 +1,7 @@
 import pytest
 from fastapi import HTTPException
 
-from sa_backend.services import BackendService
+from app.services import BackendService
 
 
 class Collection:

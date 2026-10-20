@@ -77,7 +77,7 @@ export AUTH0_CLIENT_ID=''
 export CORS_ORIGINS='["http://localhost:5173"]'
 
 cd -- "${PROJECT_ROOT}"
-uv sync --project app --locked --extra migration
-uv run --project app --extra migration ruff check app
-uv run --project app --extra migration ruff format --check app
-uv run --project app --extra migration pytest app/tests -ra
+uv sync --project backend --locked --extra migration
+uv run --project backend --extra migration ruff check backend
+uv run --project backend --extra migration ruff format --check backend
+uv run --project backend --extra migration pytest backend/tests -ra

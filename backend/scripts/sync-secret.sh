@@ -40,7 +40,7 @@ fi
 
 if [[ ! -f "${ENV_FILE}" ]]; then
   echo "Env file not found: ${ENV_FILE}" >&2
-  echo "Create it from app/.env.example and set production values." >&2
+  echo "Create it from backend/.env.example and set production values." >&2
   exit 1
 fi
 

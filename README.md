@@ -103,4 +103,4 @@ Production URL: https://helenakapeach.github.io/situational_awareness/. If `VITE
 
 ## Python / MongoDB 后端
 
-并行的 uv + FastAPI + Pydantic + MongoDB 测试环境位于 [`app/`](./app/README.md)。普通访问始终使用 Supabase；只有 `?backend=mongo` 会选择沙箱 API。每次 API 启动都会用只读 Supabase 快照重建临时 Mongo 数据。沙箱操作只写入 Mongo；生产数据和 Google Auth 仍由 Supabase 管理。现有 Pages 部署 workflow 保持不变。环境配置和发布流程见 app README。
+并行的 uv + FastAPI + Pydantic + MongoDB 测试环境位于 [`backend/`](./backend/README.md)。普通访问始终使用 Supabase；只有 `?backend=mongo` 会选择沙箱 API。每次 API 启动都会用只读 Supabase 快照重建临时 Mongo 数据。沙箱操作只写入 Mongo；生产数据和 Google Auth 仍由 Supabase 管理。现有 Pages 部署 workflow 保持不变。环境配置和发布流程见 backend README。

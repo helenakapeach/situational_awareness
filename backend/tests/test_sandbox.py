@@ -16,9 +16,9 @@ from pymongo.uri_parser import parse_uri
 from test_migration import make_bundle
 from test_supabase_dump import source_database as source_database_fixture  # noqa: F401
 
-from sa_backend import main, sandbox
-from sa_backend.auth import create_app_session_token
-from sa_backend.config import Settings
+from app import main, sandbox
+from app.auth import create_app_session_token
+from app.config import Settings
 
 SANDBOX_URI_ENV = "TEST_SANDBOX_MONGODB_URI"
 LOCAL_MONGO_HOSTS = {"localhost", "127.0.0.1", "::1", "mongo", "mongodb"}
