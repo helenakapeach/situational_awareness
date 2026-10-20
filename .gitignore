@@ -18,4 +18,3 @@ __pycache__/
 
 # Private migration exports
 migration-dumps/
-!.env.migration.example

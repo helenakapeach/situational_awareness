@@ -1,45 +1,44 @@
-# Supabase production + disposable Mongo sandbox
+# Supabase 生产环境与 MongoDB 临时沙箱
 
-Normal visits keep using Supabase for every business action. `.github/workflows/deploy-pages.yml` is unchanged. `?backend=mongo` explicitly selects the FastAPI adapter; an API failure never falls back to Supabase. Google login continues through Supabase Auth in both modes. Mongo actions, membership checks, uploads and moderation operate only on Mongo.
+普通访问的所有业务操作继续使用 Supabase，`.github/workflows/deploy-pages.yml` 保持不变。只有显式添加 `?backend=mongo` 才会选择 FastAPI；API 出错时不会回退到 Supabase。两种模式的 Google 登录都由 Supabase Auth 处理。Mongo 模式的业务操作、成员检查、头像上传和管理功能只访问 MongoDB。
 
-The dedicated Cloud Run service is `linghang-main-app`; default sandbox API origin is `https://linghang-main-app-711094273715.us-east1.run.app`. Local `.env` can override `VITE_API_BASE_URL=http://localhost:8000`, but that override is only used with `?backend=mongo`. No arbitrary API origin is accepted from URL parameters.
+专用 Cloud Run 服务为 `linghang-main-app`，沙箱 API 默认地址是 `https://linghang-main-app-711094273715.us-east1.run.app`。本地可在根目录 `.env` 设置 `VITE_API_BASE_URL=http://localhost:8000`；该地址只在 `?backend=mongo` 时使用，URL 参数不能指定任意 API 地址。
 
-## Every backend startup
+## 每次 API 启动
 
-1. Require `MONGODB_DATABASE=linghang_main_app_sandbox` and a configured `SUPABASE_DB_URL`. Connect to a transaction-capable Mongo replica set.
-2. Acquire a renewable reset lease in `linghang_main_app_sandbox_control.startup`. Old instances stop accepting requests as soon as the new reset claims that marker. Concurrent resets are rejected; a crashed reset can be replaced after its lease expires.
-3. Export a read-only PostgreSQL snapshot and download referenced avatars using GET requests. Validate the complete temporary dump before importing. No Supabase table, RPC, policy, user credential or deployment is modified.
-4. Import into a new, empty `linghang_main_app_sandbox_<random-generation>` database. Preserve IDs, source permissions, relationships, avatars and sequence highwaters. Verify the imported content.
-5. Atomically mark that generation ready only if this process still owns an unexpired reset lease. The process serves exclusively its own generation. Then drop the retired generation, guarded by an exact sandbox-name pattern. Late requests from an old process and expired importers cannot modify the new copy.
+1. 要求 `MONGODB_DATABASE=linghang_main_app_sandbox` 和已配置的 `SUPABASE_DB_URL`，并连接支持事务的 Mongo replica set。
+2. 在 `linghang_main_app_sandbox_control.startup` 获取可续期的重置租约。新重置登记后，旧实例立即停止接受请求；并发重置会被拒绝，崩溃的重置可在租约到期后被替换。
+3. 通过 `sa_backend/supabase_dump.py` 只读导出 PostgreSQL 快照，并用 GET 下载所引用的头像。导入前校验完整临时快照。不会修改 Supabase 表、RPC、策略、用户凭据或部署。
+4. 导入名称为 `linghang_main_app_sandbox_<random-generation>` 的全新空数据库，保留 ID、权限、关系、头像和 sequence 高水位，并验证导入内容。
+5. 仅当当前进程仍持有未过期租约时，才原子地将代次标记为就绪。进程只服务自己的代次；随后按精确沙箱名称规则删除旧代次，避免迟到请求或过期导入器修改新副本。
 
-The observable result is a full wipe/reset of sandbox data on every boot, including local `--reload` and Cloud Run cold starts. Test-created posts, votes, members, edits and files never survive into the next generation. The old `linghang_main_app` database, other applications' databases and Supabase production are never reset. Only a small control marker is retained between boots.
+每次启动都会完整重置沙箱，包括本地 `--reload` 和 Cloud Run 冷启动。测试创建的帖子、投票、成员、编辑和文件都不会保留到下次启动。旧的 `linghang_main_app` 数据库、其他应用数据库和 Supabase 生产数据均不会被重置；只有一个小型控制标记会跨启动保留。
 
-A failed export keeps the previous data physically intact but leaves the sandbox unavailable. A failed import is never published; its incomplete generation is removed when possible. Failed cleanup or a hard process kill can leave an unserved generation behind. It cannot become active without successful verified publication. No cache of an old source snapshot is silently served.
+导出失败时，旧数据仍物理存在，但沙箱不可用。导入失败的代次不会发布，通常会被清理；清理失败或进程被强制终止可能留下未服务的代次，但验证通过前它不会成为活动代次。系统不会静默回退到旧来源快照。
 
-Each HTTP request checks the shared generation marker. Retired instances return 503, including `/health`; they cannot serve a partly imported database. A reset can briefly interrupt sandbox access during deployments. Cloud Run is limited to one instance and the image runs one Uvicorn worker, reducing repeated cold-start resets. Do not point multiple local processes at the same sandbox cluster unless intentional: starting either one retires the other.
+每个 HTTP 请求都会检查共享代次标记。已退役实例（包括 `/health`）返回 503，不会提供部分导入的数据。部署重置时沙箱可能短暂不可用。Cloud Run 限制为一个实例，镜像运行一个 Uvicorn worker，以减少重复冷启动。除非有意互相退役，否则不要让多个本地进程共用一个沙箱集群。
 
-## Configuration and deployment
+## 配置与部署
 
-Use `app/.env.example` for runtime names. The existing appointments Mongo cluster credentials may be reused, while business data is isolated by sandbox database names. `configure-from-linghang.py` defaults to that sandbox namespace and preserves any source DB/Storage credentials already configured. It never copies appointments business collections.
+运行时变量名见 `app/.env.example`。可以复用现有 appointments Mongo 集群凭据，但必须使用独立的沙箱数据库名称。Mongo URI 可以参考 `~/gitSpot/linghang-appt/backend/.env` 中的连接配置；不要把实际凭据打印到终端、文档或提交中。应用需要自己的随机 `APP_SESSION_SECRET` 和沙箱命名空间 `linghang_main_app_sandbox`。
 
-`SUPABASE_DB_URL` must identify the current production Supabase project's PostgreSQL direct/session-pooler connection and allow SELECT of the nine public tables, referenced `auth.users` identity columns, `storage.objects` metadata, and identity sequences. Use a read-only database role where available. The public browser key is insufficient. Optional `SUPABASE_SERVICE_ROLE_KEY` is used only for authenticated avatar GET downloads; public avatars need no server key.
+`SUPABASE_DB_URL` 必须指向当前生产 Supabase 项目的 PostgreSQL direct/session-pooler 连接，并允许读取九张公开业务表、被引用的 `auth.users` 身份列、`storage.objects` 元数据和 identity sequence。可用时使用只读数据库角色。公开浏览器密钥权限不足。只有需要认证式头像 GET 下载时才配置 `SUPABASE_SERVICE_ROLE_KEY`；公开头像不需要服务端密钥。
 
-The deploy helper runs `check-sandbox-config.py` before changing cloud resources or uploading secrets. It refuses a different Mongo namespace or missing source configuration. The image includes the PostgreSQL driver. Credentials stay in the private env file / dedicated Secret Manager secret, never in Git or frontend variables. Existing Pages/Supabase deployment commands stay unchanged.
+部署脚本会在修改云资源或上传密钥前运行 `check-sandbox-config.py`，拒绝错误的 Mongo 命名空间或缺失的来源配置。镜像包含 PostgreSQL 驱动。凭据保留在私有 env 文件和独立 Secret Manager secret 中，不进入 Git 或前端变量。现有 Pages/Supabase 部署流程保持不变。
 
 ```sh
-uv sync --project app --locked --extra migration
-uv run --project app --extra migration python app/scripts/configure-from-linghang.py
-# Add SUPABASE_DB_URL to app/.env; keep MONGODB_DATABASE=linghang_main_app_sandbox.
+# 在 app/.env 中配置运行时变量，并确认 MONGODB_DATABASE=linghang_main_app_sandbox。
+uv run --project app --extra migration python app/scripts/check-sandbox-config.py --env-file app/.env
 PROJECT_ID=project-d65805f6-4709-4498-9df REGION=us-east1 \
   app/scripts/deploy-cloud-run.sh
 ```
 
-The startup probe allows up to 240 seconds for rebuilding. If data exceeds the startup budget or avatars change/disappear during the export, startup fails and must be retried; it does not enable an incomplete sandbox. SQL uses one repeatable-read snapshot, while Storage files are fetched separately. Production writes remain enabled for this non-production rollout.
+启动探针最多等待 240 秒完成重建。若数据超过启动时限，或导出期间头像发生变化或消失，启动会失败，需要重试；系统不会启用不完整的沙箱。SQL 导出使用单个 `REPEATABLE READ` 快照，Storage 文件则单独获取。此非生产发布期间，生产写入仍保持启用。
 
-This is intentionally a full business-data copy, including private profile fields and content. Auth passwords, sessions and refresh tokens are excluded. Mongo API membership/privacy rules still apply, and source `is_admin`/`is_disabled`/verification flags are preserved. Sandbox business writes never call the source database. Browser business caches are namespaced for Mongo; theme and Google login remain shared.
+该流程会复制完整业务数据，包括私密资料字段和内容，但不复制 Auth 密码、会话或 refresh token。Mongo API 的成员和隐私规则仍然生效，并保留来源的 `is_admin`、`is_disabled` 和角色验证标记。沙箱业务写入不会调用来源数据库。浏览器业务缓存按 Mongo 模式隔离；主题设置和 Google 登录共用。
 
-## Review verification
+## 发布前验证
 
-Tests cover default Supabase selection, explicit Mongo routing, preserved OAuth/deep-link parameters, browser cache separation, real SQL export, complete source-to-startup-to-API rebuilding, repeated reset, wrong-target refusal, concurrent owners, expired-owner publication, and unavailable-generation 503 responses. Destructive startup tests require an explicit localhost-only `TEST_SANDBOX_MONGODB_URI`; CI provisions disposable Mongo and PostgreSQL containers.
+使用项目技能 `$backend-tests` 或执行 `bash .agents/skills/backend-tests/scripts/run.sh` 验证后端。它会用专用临时 MongoDB 8 replica set 与 PostgreSQL 17、动态 loopback 端口运行 `uv` lint 和完整 pytest，并在退出时清理容器；不会读取线上凭据或连接应用沙箱。后端测试覆盖真实 SQL 导出、从来源数据到启动导入再到 API 的重建、重复重置、错误目标拒绝、并发租约、过期所有者发布保护和未就绪代次的 503 响应。默认 Supabase 选择、显式 Mongo 路由、OAuth 和深链参数及浏览器缓存隔离由 Node 测试验证；前端相关改动还需运行 `npm test` 和 `npm run build`。
 
-This branch prepares the rollout for review. It does not deploy a new revision, upload source credentials, switch production traffic, or run a production-data export.
+本分支为发布审查准备代码，不会部署新版本、上传来源凭据、切换生产流量或导出生产数据。

@@ -101,6 +101,6 @@ Pages builds from `main` via `.github/workflows/deploy-pages.yml`. It does **not
 
 Production URL: https://helenakapeach.github.io/situational_awareness/. If `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` are missing from the repo's Actions **Variables**, the live site stays in browser-only demo mode.
 
-## Python / MongoDB backend
+## Python / MongoDB 后端
 
-A parallel uv + FastAPI + Pydantic + MongoDB test stack lives in [`app/`](./app/README.md). Ordinary visits always use Supabase; only `?backend=mongo` selects the sandbox API. Each API startup replaces its disposable Mongo data with a read-only Supabase snapshot. Sandbox actions write only Mongo; Supabase continues to own production data and Google Auth. The existing Pages deployment workflow is unchanged. See the app README for setup and rollout details.
+并行的 uv + FastAPI + Pydantic + MongoDB 测试环境位于 [`app/`](./app/README.md)。普通访问始终使用 Supabase；只有 `?backend=mongo` 会选择沙箱 API。每次 API 启动都会用只读 Supabase 快照重建临时 Mongo 数据。沙箱操作只写入 Mongo；生产数据和 Google Auth 仍由 Supabase 管理。现有 Pages 部署 workflow 保持不变。环境配置和发布流程见 app README。

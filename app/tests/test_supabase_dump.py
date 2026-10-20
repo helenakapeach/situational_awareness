@@ -346,12 +346,8 @@ def _source_state(psycopg, database_url):
         return {"counts": counts, "sequences": sequences}
 
 
-def test_exported_snapshot_imports_and_verifies_through_cli(source_database, db, tmp_path):
-    """Use both real databases and the user-facing command, including a fresh namespace."""
-    import subprocess
-    import sys
-    from pathlib import Path
-
+def test_exported_snapshot_imports_and_verifies_through_services(source_database, db, tmp_path):
+    """Use both real databases and the runtime migration services with a fresh namespace."""
     from sa_backend.migration import import_bundle, verify_bundle
     from sa_backend.services import BackendService, bootstrap_indexes
 
@@ -370,22 +366,12 @@ def test_exported_snapshot_imports_and_verifies_through_cli(source_database, db,
         client.close()
     bundle = load_bundle(output)
     target = db.client[f"sa_mig_{uuid4().hex[:20]}"]
-    cli = Path(__file__).resolve().parents[1] / "scripts/migrate-supabase-to-mongo.py"
     try:
-        env = {**os.environ, "MONGODB_URI": os.environ["TEST_MONGODB_URI"]}
-
-        def run(*args):
-            result = subprocess.run(
-                [sys.executable, str(cli), *args], env=env, capture_output=True, text=True, check=True
-            )
-            return json.loads(result.stdout)
-
-        assert run("validate", "--input", str(output))["ok"]
-        planned = run("import", "--input", str(output), "--database", target.name)
+        planned = import_bundle(target, bundle)
         assert planned["applied"] is False
         assert target.list_collection_names() == []
-        assert run("import", "--input", str(output), "--database", target.name, "--apply")["applied"] is True
-        assert run("verify", "--input", str(output), "--database", target.name)["ok"]
+        assert import_bundle(target, bundle, apply=True)["applied"] is True
+        assert verify_bundle(target, bundle)["ok"]
         bootstrap_indexes(target)
         assert verify_bundle(target, bundle)["ok"]  # Startup must not add/delete source cohort records.
         svc = BackendService(target, {"id": source_user})
