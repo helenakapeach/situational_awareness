@@ -1,6 +1,17 @@
 import './styles.css'
 import { createBackend } from './backend.js'
 import {
+  cancelProfileEdit,
+  createProfileViewState,
+  enterProfilePreview,
+  exitProfilePreview,
+  profileForPresentation,
+  profileTabVisibility,
+  selectProfileTab,
+  startProfileEdit,
+  visibleProfileContacts,
+} from './profile-state.js'
+import {
   LIMITS,
   anonymousPersona,
   assignAnonymousPersonas,
@@ -16,6 +27,7 @@ import {
   isLateNight,
   isUploadedAvatar,
   MILESTONES,
+  normalizeLinkedInUrl,
   normalizePostId,
   postIdFromSearch,
   postShareText,
@@ -114,6 +126,7 @@ let session = null
 let ownProfile = null
 let cohorts = []
 let profileError = ''
+let profileViewState = createProfileViewState()
 let loadingPosts = false
 let toastTimer = null
 let searchTimer = null
@@ -378,6 +391,11 @@ function restoreDrafts(userId) {
 }
 
 function showPanel(name) {
+  if (name !== 'me' && profileViewState.previewing) {
+    profileViewState = exitProfilePreview(profileViewState)
+    document.querySelector('#panel-me').classList.remove('profile-previewing')
+    renderProfilePanel()
+  }
   elements.panels.forEach((panel) => {
     panel.hidden = panel.id !== `panel-${name}`
   })
@@ -2202,12 +2220,6 @@ function makeRoleTag(role, cohortName, verified) {
   return tag
 }
 
-function fieldLabel(text, control) {
-  const label = element('label', '', text)
-  label.htmlFor = control.id
-  return label
-}
-
 function textInput(id, value, max) {
   const input = document.createElement('input')
   input.id = id
@@ -2224,22 +2236,6 @@ function selectInput(id, options, value) {
   for (const [optionValue, label] of options) select.append(new Option(label, optionValue))
   select.value = value == null ? '' : String(value)
   return select
-}
-
-function publicToggle(field, checked) {
-  const label = element('label', 'checkbox-line')
-  const input = document.createElement('input')
-  input.type = 'checkbox'
-  input.id = `${field.id}-public`
-  input.checked = Boolean(checked)
-  label.append(input, element('span', '', '对成员公开'))
-  const sync = () => {
-    input.disabled = !field.value.trim()
-    if (input.disabled) input.checked = false
-  }
-  field.addEventListener('input', sync)
-  sync()
-  return { label, input }
 }
 
 function profileAvatarBlock(profile) {
@@ -2362,18 +2358,193 @@ function buildProfileSummary(profile) {
   return card
 }
 
+function profileContactRows(profile, includePrivate = false) {
+  const rows = element('div', 'profile-contact-rows')
+  const contacts = visibleProfileContacts(profile, includePrivate)
+  for (const { icon, label, value, isPublic, key } of contacts) {
+    const row = element('div', 'profile-contact-row')
+    if (!isPublic) row.classList.add('is-private')
+    row.append(makeContactIcon(icon), element('span', 'profile-contact-label', label))
+    if (key === 'linkedin_url' && validLinkedInUrl(value)) {
+      const link = element('a', 'profile-contact-value', linkedInDisplayValue(value))
+      link.href = value
+      link.target = '_blank'
+      link.rel = 'noopener noreferrer'
+      row.append(link)
+    } else if (key === 'contact_email' && validContactEmail(value)) {
+      const link = element('a', 'profile-contact-value', value)
+      link.href = `mailto:${value}`
+      row.append(link)
+    } else {
+      row.append(element('span', 'profile-contact-value', value))
+    }
+    if (includePrivate) {
+      row.append(element('span', 'profile-contact-visibility', isPublic ? '所有成员可见' : '仅自己可见'))
+    }
+    rows.append(row)
+  }
+  if (!rows.childElementCount) rows.append(element('p', 'profile-empty', '还没有公开的联系方式。'))
+  return rows
+}
+
+function profileHero(profile) {
+  const hero = element('header', 'profile-hero')
+  const identity = element('div', 'profile-hero-identity')
+  const name = element('h1', 'profile-name', profile.display_name || '成员')
+  if (profile.role_verified) name.append(element('span', 'verified-mark', '✓ 已认证'))
+  identity.append(name)
+  const tag = makeRoleTag(profile.role, profile.cohort_name, false)
+  const year = graduationLabel(profile.graduation_year)
+  if (tag || year) {
+    const meta = element('p', 'profile-meta')
+    if (tag) meta.append(tag)
+    if (year) meta.append(element('span', 'profile-year', year))
+    identity.append(meta)
+  }
+  if (profile.tagline) identity.append(element('p', 'profile-tagline', profile.tagline))
+  hero.append(makeAvatar(profile.display_name, profile.avatar_url), identity)
+  return hero
+}
+
+function buildProfileTabs() {
+  const tabs = element('nav', 'profile-tabs')
+  tabs.setAttribute('aria-label', '个人主页内容')
+  for (const [tab, label] of [['profile', '个人主页'], ['discussions', '我的讨论 · 仅自己可见']]) {
+    const button = element('button', profileViewState.activeTab === tab ? 'is-active' : '', label)
+    button.type = 'button'
+    button.setAttribute('aria-current', profileViewState.activeTab === tab ? 'page' : 'false')
+    button.addEventListener('click', () => {
+      const form = document.querySelector('#profile-editor')
+      profileViewState = selectProfileTab(profileViewState, tab, form ? profileDraftFromForm(form) : undefined)
+      const visibility = profileTabVisibility(profileViewState)
+      document.querySelector('#panel-me').classList.toggle('profile-discussions-active', visibility.showDiscussions)
+      document.querySelector('#panel-me').classList.toggle('profile-profile-active', visibility.showProfile)
+      document.querySelector('#profile-panel .profile-tabs')?.replaceWith(buildProfileTabs())
+    })
+    tabs.append(button)
+  }
+  return tabs
+}
+
+function profileDraftFromForm(form) {
+  const linkedinInput = form.querySelector('#profile-linkedin_url-input').value
+  const linkedin = normalizeLinkedInUrl(linkedinInput)
+  return {
+    display_name: form.querySelector('#profile-name-input').value,
+    tagline: form.querySelector('#profile-tagline-input').value,
+    bio: form.querySelector('#profile-bio-input').value,
+    linkedin_url: linkedin,
+    linkedin_public: form.querySelector('#profile-linkedin_url-visibility-input').value === 'public',
+    contact_email: form.querySelector('#profile-contact_email-input').value,
+    email_public: form.querySelector('#profile-contact_email-visibility-input').value === 'public',
+    wechat_id: form.querySelector('#profile-wechat_id-input').value,
+    wechat_public: form.querySelector('#profile-wechat_id-visibility-input').value === 'public',
+    role: form.querySelector('#profile-role-input').value,
+    cohort_id: form.querySelector('#profile-cohort-input').value,
+    graduation_year: form.querySelector('#profile-year-input').value,
+  }
+}
+
+function updateProfilePreviewState() {
+  const form = document.querySelector('#profile-editor')
+  profileViewState = enterProfilePreview(profileViewState, form ? profileDraftFromForm(form) : undefined)
+  document.querySelector('#panel-me').classList.remove('profile-discussions-active')
+  document.querySelector('#panel-me').classList.toggle('profile-previewing', profileViewState.previewing)
+  renderProfilePanel()
+}
+
+function startEditingProfile() {
+  profileViewState = startProfileEdit(profileViewState)
+  renderProfilePanel()
+}
+
+function profileSectionHeading(title, actionLabel, onAction) {
+  const heading = element('div', 'profile-section-heading')
+  heading.append(element('h2', '', title))
+  if (actionLabel) {
+    const action = element('button', 'text-button profile-section-action', actionLabel)
+    action.type = 'button'
+    action.addEventListener('click', onAction)
+    heading.append(action)
+  }
+  return heading
+}
+
+function buildProfileView(profile, memberPreview = false) {
+  const card = element('div', memberPreview ? 'profile-page is-member-preview' : 'profile-page')
+  const toolbar = element('div', 'profile-toolbar')
+  if (memberPreview) {
+    toolbar.append(element('span', 'profile-preview-label', profileViewState.editing
+      ? '成员视角预览 · 未保存'
+      : '成员视角预览'))
+    const back = element('button', 'text-button', profileViewState.editing ? '返回编辑' : '返回我的主页')
+    back.type = 'button'
+    back.addEventListener('click', () => {
+      profileViewState = exitProfilePreview(profileViewState)
+      document.querySelector('#panel-me').classList.remove('profile-previewing')
+      renderProfilePanel()
+    })
+    toolbar.append(back)
+  } else {
+    toolbar.append(element('span', 'profile-owner-label', '我的主页'))
+    const preview = element('button', 'secondary-button', '以成员视角预览')
+    preview.type = 'button'
+    preview.addEventListener('click', updateProfilePreviewState)
+    toolbar.append(preview)
+  }
+  card.append(toolbar)
+
+  const hero = profileHero(profile)
+  if (!memberPreview) {
+    const edit = element('button', 'primary-button profile-hero-action', '编辑资料')
+    edit.type = 'button'
+    edit.addEventListener('click', startEditingProfile)
+    hero.append(edit)
+  }
+  card.append(hero)
+  if (!memberPreview) card.append(buildProfileTabs())
+
+  const about = element('section', 'profile-section')
+  about.append(profileSectionHeading('关于我', memberPreview ? '' : '编辑', startEditingProfile))
+  if (profile.bio?.trim()) about.append(makeMarkdownBody('profile-bio', profile.bio))
+  else about.append(element('p', 'profile-empty', '还没有填写自我介绍。'))
+  card.append(about)
+
+  const contactSection = element('section', 'profile-section')
+  contactSection.append(profileSectionHeading('联系方式', memberPreview ? '' : '管理公开范围', startEditingProfile))
+  contactSection.append(element('p', 'profile-section-note', memberPreview
+    ? '仅显示你设置为公开的联系方式。'
+    : '你可以分别设置每项联系方式的公开范围。'))
+  contactSection.append(profileContactRows(profile, !memberPreview))
+  card.append(contactSection)
+  return card
+}
+
 function buildProfileForm() {
-  const profile = ownProfile
-  const form = element('form', 'profile-form')
+  const profile = profileForPresentation(ownProfile, profileViewState)
+  const form = element('form', 'profile-form profile-page profile-editing')
+  form.id = 'profile-editor'
+  const toolbar = element('div', 'profile-toolbar')
+  toolbar.append(element('span', 'profile-owner-label', '我的主页'))
+  const preview = element('button', 'secondary-button', '以成员视角预览')
+  preview.type = 'button'
+  preview.addEventListener('click', updateProfilePreviewState)
+  toolbar.append(preview)
+  form.append(toolbar)
 
   const name = textInput('profile-name-input', profile.display_name, LIMITS.displayNameMax)
+  name.className = 'profile-name profile-name-inline profile-inline-input'
+  name.setAttribute('aria-label', '昵称')
   name.required = true
   const tagline = textInput('profile-tagline-input', profile.tagline, LIMITS.taglineMax)
+  tagline.className = 'profile-tagline profile-tagline-inline profile-inline-input'
+  tagline.setAttribute('aria-label', '一句话介绍')
   const bio = document.createElement('textarea')
   bio.id = 'profile-bio-input'
-  bio.rows = 5
+  bio.rows = 3
   bio.maxLength = LIMITS.bioMax
   bio.value = profile.bio || ''
+  bio.setAttribute('aria-label', '自我介绍')
   const bioCount = element('span', 'character-count')
   attachCharacterCount(bio, bioCount, LIMITS.bioMax)
 
@@ -2392,12 +2563,12 @@ function buildProfileForm() {
   for (let value = GRADUATION_YEAR_MAX; value >= GRADUATION_YEAR_MIN; value -= 1) years.push([String(value), String(value)])
   const year = selectInput('profile-year-input', [['', '未选择'], ...years], profile.graduation_year)
 
-  const studentFields = element('div')
-  studentFields.append(fieldLabel('班级', cohort), cohort)
-  if (!cohorts.length) {
-    studentFields.append(element('p', 'profile-note', '班级还没建好，可以先保存角色，之后再选。'))
-  }
-  studentFields.append(fieldLabel('毕业年份', year), year)
+  const studentFields = element('div', 'profile-student-fields')
+  cohort.setAttribute('aria-label', '班级')
+  year.setAttribute('aria-label', '毕业年份')
+  studentFields.append(cohort, year)
+  if (!cohorts.length) studentFields.append(element('p', 'profile-note', '班级还没建好，可以先保存角色，之后再选。'))
+  role.setAttribute('aria-label', '角色')
 
   const roleHint = element('p', 'profile-note', '改了角色或班级后，认证会取消。')
   const syncRole = () => {
@@ -2411,39 +2582,58 @@ function buildProfileForm() {
   cohort.addEventListener('change', syncRole)
   syncRole()
 
-  const linkedin = textInput('profile-linkedin-input', linkedInDisplayValue(profile.linkedin_url), 160)
-  linkedin.placeholder = 'www.linkedin.com/in/…'
+  const linkedin = textInput('profile-linkedin_url-input', linkedInDisplayValue(profile.linkedin_url), 160)
+  linkedin.placeholder = 'https://www.linkedin.com/in/…'
   linkedin.inputMode = 'url'
-  const linkedinPublic = publicToggle(linkedin, profile.linkedin_public)
-
-  const email = textInput('profile-email-input', profile.contact_email, 120)
+  const email = textInput('profile-contact_email-input', profile.contact_email, 120)
   email.placeholder = 'name@example.com'
   email.inputMode = 'email'
-  const emailPublic = publicToggle(email, profile.email_public)
+  const wechat = textInput('profile-wechat_id-input', profile.wechat_id, 20)
+  wechat.placeholder = '微信号'
 
-  const wechat = textInput('profile-wechat-input', profile.wechat_id, 20)
-  wechat.placeholder = '字母开头，6 到 20 位'
-  const wechatPublic = publicToggle(wechat, profile.wechat_public)
+  const contacts = element('section', 'profile-section')
+  contacts.append(element('h2', '', '联系方式'))
+  contacts.append(element('p', 'profile-section-note', '每项联系方式都可以单独设置公开范围。'))
+  const contactFields = [
+    ['linkedin', 'LinkedIn', linkedin, profile.linkedin_public, 'linkedin_url'],
+    ['mail', '联系邮箱', email, profile.email_public, 'contact_email'],
+    ['wechat', '微信号', wechat, profile.wechat_public, 'wechat_id'],
+  ]
+  for (const [icon, label, input, isPublic, key] of contactFields) {
+    input.setAttribute('aria-label', label)
+    const visibility = selectInput(`profile-${key}-visibility-input`, [['public', '所有成员可见'], ['private', '仅自己可见']], isPublic ? 'public' : 'private')
+    visibility.setAttribute('aria-label', `${label}可见范围`)
+    const row = element('div', 'profile-contact-row profile-contact-edit-row')
+    row.append(makeContactIcon(icon), element('span', 'profile-contact-label', label), input, visibility)
+    contacts.append(row)
+  }
+  contacts.append(element('p', 'profile-note', '公开邮箱是你主动填写的联系邮箱，不会自动使用登录邮箱。'))
 
-  const actions = element('div', 'composer-actions')
-  const save = element('button', 'primary-button', '保存')
+  const actions = element('div', 'profile-hero-actions')
+  const cancel = element('button', 'secondary-button', '取消')
+  cancel.type = 'button'
+  cancel.addEventListener('click', () => {
+    profileViewState = cancelProfileEdit(profileViewState)
+    document.querySelector('#panel-me').classList.remove('profile-discussions-active')
+    renderProfilePanel()
+  })
+  const save = element('button', 'primary-button', '保存资料')
   save.type = 'submit'
-  actions.append(save)
+  actions.append(cancel, save)
 
-  form.append(
-    profileAvatarBlock(profile),
-    fieldLabel('昵称', name), name,
-    fieldLabel('一句话介绍', tagline), tagline,
-    fieldLabel('自我介绍', bio), bio, bioCount,
-    fieldLabel('角色', role), role, roleHint,
-    studentFields,
-    fieldLabel('LinkedIn', linkedin), linkedin, linkedinPublic.label,
-    fieldLabel('公开邮箱', email), email,
-    element('p', 'profile-note', '这是你想公开的联系邮箱，不会自动填成登录用的 Gmail。'),
-    emailPublic.label,
-    fieldLabel('微信号', wechat), wechat, wechatPublic.label,
-    actions,
-  )
+  const hero = element('header', 'profile-hero profile-hero-edit')
+  hero.append(profileAvatarBlock(profile))
+  const identity = element('div', 'profile-hero-identity')
+  identity.append(name)
+  const meta = element('div', 'profile-meta profile-meta-edit')
+  meta.append(role, studentFields)
+  identity.append(meta, tagline, roleHint)
+  hero.append(identity, actions)
+  form.append(hero, buildProfileTabs())
+
+  const about = element('section', 'profile-section')
+  about.append(element('h2', '', '关于我'), bio, bioCount)
+  form.append(about, contacts)
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault()
@@ -2452,11 +2642,11 @@ function buildProfileForm() {
       tagline: tagline.value,
       bio: bio.value,
       linkedin_url: linkedin.value,
-      linkedin_public: linkedinPublic.input.checked,
+      linkedin_public: form.querySelector('#profile-linkedin_url-visibility-input').value === 'public',
       contact_email: email.value,
-      email_public: emailPublic.input.checked,
+      email_public: form.querySelector('#profile-contact_email-visibility-input').value === 'public',
       wechat_id: wechat.value,
-      wechat_public: wechatPublic.input.checked,
+      wechat_public: form.querySelector('#profile-wechat_id-visibility-input').value === 'public',
       role: role.value,
       cohort_id: cohort.value,
       graduation_year: year.value,
@@ -2468,6 +2658,7 @@ function buildProfileForm() {
     setButtonBusy(save, true, '保存中…')
     try {
       const saved = await backend.updateOwnProfile(result.value)
+      profileViewState = cancelProfileEdit(profileViewState)
       await profileChanged(saved, '资料已保存。实名内容上的名字会一起更新。')
       renderProfilePanel()
     } catch (error) {
@@ -2486,7 +2677,17 @@ function renderProfilePanel() {
     error.append(element('strong', '', '个人资料暂时加载不了。'), element('p', '', profileError))
     root.append(error)
   } else if (ownProfile) {
-    root.append(buildProfileForm())
+    const tabState = profileTabVisibility(profileViewState)
+    document.querySelector('#panel-me').classList.toggle('profile-discussions-active', tabState.showDiscussions)
+    document.querySelector('#panel-me').classList.toggle('profile-profile-active', tabState.showProfile)
+    document.querySelector('#panel-me').classList.toggle('profile-previewing', profileViewState.previewing)
+    if (profileViewState.previewing) {
+      root.append(buildProfileView(profileForPresentation(ownProfile, profileViewState), true))
+    } else if (profileViewState.editing) {
+      root.append(buildProfileForm())
+    } else {
+      root.append(buildProfileView(ownProfile))
+    }
   }
 }
 
