@@ -1,5 +1,6 @@
+import type { AppSession, Cohort, Post, Profile, Reply } from './types.ts'
 import './styles.css'
-import { createBackend } from './backend.js'
+import { createBackend } from './backend.ts'
 import {
   cancelProfileEdit,
   createProfileViewState,
@@ -10,7 +11,8 @@ import {
   selectProfileTab,
   startProfileEdit,
   visibleProfileContacts,
-} from './profile-state.js'
+} from './profile-state.ts'
+import type { ProfileDraft } from './profile-state.ts'
 import {
   LIMITS,
   anonymousPersona,
@@ -47,71 +49,82 @@ import {
   validateReply,
   validContactEmail,
   validLinkedInUrl,
-} from './lib.js'
-import { renderMarkdown } from './markdown.js'
+} from './lib.ts'
+import { renderMarkdown } from './markdown.ts'
 
-const backend = createBackend()
+const backend: import('./types.ts').Backend = createBackend()
+
+function query<T extends Element = HTMLElement>(selector: string): T {
+  const element = document.querySelector<T>(selector)
+  if (!element) throw new Error(`Required page element was not found: ${selector}`)
+  return element
+}
+
+function queryAll<T extends Element = HTMLElement>(selector: string): NodeListOf<T> {
+  return document.querySelectorAll<T>(selector)
+}
+
 const elements = {
-  accountName: document.querySelector('#account-name'),
-  app: document.querySelector('#app-view'),
-  confirmAccept: document.querySelector('#confirm-accept'),
-  confirmBody: document.querySelector('#confirm-body'),
-  confirmCancel: document.querySelector('#confirm-cancel'),
-  confirmDialog: document.querySelector('#confirm-dialog'),
-  backToTop: document.querySelector('#back-to-top'),
-  confirmTitle: document.querySelector('#confirm-title'),
-  composerClose: document.querySelector('#composer-close'),
-  demoBanner: document.querySelector('#demo-banner'),
-  feed: document.querySelector('#feed'),
-  feedHeadingRow: document.querySelector('.feed-heading-row'),
-  feedIntro: document.querySelector('#panel-feed > .intro-panel'),
-  feedStatus: document.querySelector('#feed-status'),
-  feedbackBody: document.querySelector('#feedback-body'),
-  feedbackButton: document.querySelector('#feedback-button'),
-  feedbackCancel: document.querySelector('#feedback-cancel'),
-  feedbackDialog: document.querySelector('#feedback-dialog'),
-  feedbackForm: document.querySelector('#feedback-form'),
-  inviteCodeInput: document.querySelector('#invite-code-input'),
-  inviteError: document.querySelector('#invite-error'),
-  inviteForm: document.querySelector('#invite-form'),
-  inviteSignoutButton: document.querySelector('#invite-signout-button'),
-  inviteView: document.querySelector('#invite-view'),
-  likesList: document.querySelector('#likes-list'),
-  likesStatus: document.querySelector('#likes-status'),
-  myContentList: document.querySelector('#my-content-list'),
-  myContentStatus: document.querySelector('#my-content-status'),
-  loadMoreButton: document.querySelector('#load-more-button'),
-  loadMoreRow: document.querySelector('.load-more-row'),
-  loading: document.querySelector('#loading-view'),
-  login: document.querySelector('#signed-out-view'),
-  loginButton: document.querySelector('#login-button'),
-  copyLoginLink: document.querySelector('#copy-login-link'),
-  copyBrowserLink: document.querySelector('#copy-browser-link'),
-  logoutButton: document.querySelector('#logout-button'),
-  notificationButton: document.querySelector('#notification-button'),
-  notificationCount: document.querySelector('#notification-count'),
-  notificationList: document.querySelector('#notification-list'),
-  notificationPanel: document.querySelector('#notification-panel'),
-  notificationSummary: document.querySelector('#notification-summary'),
-  panelLinks: document.querySelectorAll('.panel-link'),
-  panels: document.querySelectorAll('.panel'),
-  composerFields: document.querySelector('#composer-fields'),
-  brandLink: document.querySelector('.compact-brand'),
-  composerHeading: document.querySelector('.composer-heading'),
-  composerHint: document.querySelector('#composer-hint'),
-  composerToggle: document.querySelector('#composer-toggle'),
-  composerToggleLabel: document.querySelector('#composer-toggle-label'),
-  postAnonymous: document.querySelector('#post-anonymous'),
-  postBody: document.querySelector('#post-body'),
-  postCharacterCount: document.querySelector('#post-character-count'),
-  postForm: document.querySelector('#post-form'),
-  postIdentity: document.querySelector('#post-identity'),
-  postTitle: document.querySelector('#post-title'),
-  refreshButton: document.querySelector('#refresh-button'),
-  searchInput: document.querySelector('#search-input'),
-  themeToggles: document.querySelectorAll('.theme-toggle'),
-  toast: document.querySelector('#toast'),
-  wechatBrowserNotice: document.querySelector('#wechat-browser-notice'),
+  accountName: query('#account-name'),
+  app: query('#app-view'),
+  confirmAccept: query<HTMLButtonElement>('#confirm-accept'),
+  confirmBody: query('#confirm-body'),
+  confirmCancel: query<HTMLButtonElement>('#confirm-cancel'),
+  confirmDialog: query<HTMLDialogElement>('#confirm-dialog'),
+  backToTop: query<HTMLButtonElement>('#back-to-top'),
+  confirmTitle: query('#confirm-title'),
+  composerClose: query<HTMLButtonElement>('#composer-close'),
+  demoBanner: query('#demo-banner'),
+  feed: query('#feed'),
+  feedHeadingRow: query('.feed-heading-row'),
+  feedIntro: query('#panel-feed > .intro-panel'),
+  feedStatus: query('#feed-status'),
+  feedbackBody: query<HTMLTextAreaElement>('#feedback-body'),
+  feedbackButton: query<HTMLButtonElement>('#feedback-button'),
+  feedbackCancel: query<HTMLButtonElement>('#feedback-cancel'),
+  feedbackDialog: query<HTMLDialogElement>('#feedback-dialog'),
+  feedbackForm: query<HTMLFormElement>('#feedback-form'),
+  inviteCodeInput: query<HTMLInputElement>('#invite-code-input'),
+  inviteError: query('#invite-error'),
+  inviteForm: query<HTMLFormElement>('#invite-form'),
+  inviteSignoutButton: query<HTMLButtonElement>('#invite-signout-button'),
+  inviteView: query('#invite-view'),
+  likesList: query('#likes-list'),
+  likesStatus: query('#likes-status'),
+  myContentList: query('#my-content-list'),
+  myContentStatus: query('#my-content-status'),
+  loadMoreButton: query<HTMLButtonElement>('#load-more-button'),
+  loadMoreRow: query('.load-more-row'),
+  loading: query('#loading-view'),
+  login: query('#signed-out-view'),
+  loginButton: query<HTMLButtonElement>('#login-button'),
+  copyLoginLink: query<HTMLButtonElement>('#copy-login-link'),
+  copyBrowserLink: query<HTMLButtonElement>('#copy-browser-link'),
+  logoutButton: query<HTMLButtonElement>('#logout-button'),
+  notificationButton: query<HTMLButtonElement>('#notification-button'),
+  notificationCount: query('#notification-count'),
+  notificationList: query('#notification-list'),
+  notificationPanel: query('#notification-panel'),
+  notificationSummary: query('#notification-summary'),
+  panelLinks: queryAll('.panel-link'),
+  panels: queryAll('.panel'),
+  composerFields: query('#composer-fields'),
+  brandLink: query<HTMLAnchorElement>('.compact-brand'),
+  composerHeading: query('.composer-heading'),
+  composerHint: query('#composer-hint'),
+  composerToggle: query<HTMLButtonElement>('#composer-toggle'),
+  composerToggleLabel: query('#composer-toggle-label'),
+  postAnonymous: query<HTMLInputElement>('#post-anonymous'),
+  postBody: query<HTMLTextAreaElement>('#post-body'),
+  postCharacterCount: query('#post-character-count'),
+  postForm: query<HTMLFormElement>('#post-form'),
+  postIdentity: query('#post-identity'),
+  postTitle: query<HTMLInputElement>('#post-title'),
+  refreshButton: query<HTMLButtonElement>('#refresh-button'),
+  searchInput: query<HTMLInputElement>('#search-input'),
+  themeToggles: queryAll('.theme-toggle'),
+  toast: query('#toast'),
+  wechatBrowserNotice: query('#wechat-browser-notice'),
 }
 
 const THEME_KEY = 'situational-awareness-theme'
@@ -122,28 +135,28 @@ const MILESTONES_KEY = backendStorageKey('situational-awareness-milestones', bac
 const BASE_DOCUMENT_TITLE = document.title
 
 let isAdmin = false
-let session = null
-let ownProfile = null
-let cohorts = []
+let session: AppSession | null = null
+let ownProfile: Profile | null = null
+let cohorts: Cohort[] = []
 let profileError = ''
 let profileViewState = createProfileViewState()
 let loadingPosts = false
-let toastTimer = null
-let searchTimer = null
+let toastTimer: number | null = null
+let searchTimer: number | null = null
 // 搜索只筛已经取回的这批帖子，不再打一次后端
-let cachedPosts = []
+let cachedPosts: Post[] = []
 let hasMorePosts = false
 let searchQuery = ''
-let detailOrigin = null
+let detailOrigin: 'feed' | 'likes' | 'me' | null = null
 let originReturnScroll = 0
 // 服务端搜索结果。键是发起时的搜索词，晚到的旧结果不会盖掉新搜索。
-let searchResults = { query: '', posts: [], loading: false }
+let searchResults: { query: string; posts: Post[]; loading: boolean } = { query: '', posts: [], loading: false }
 let searchRequest = 0
-let unreadTrackingUserId = null
+let unreadTrackingUserId: string | null = null
 let unreadBaselineAt = Date.now()
-let postSeenAt = {}
+let postSeenAt: Record<string, number> = {}
 
-function userStorageKey(key) {
+function userStorageKey(key: string) {
   return `${key}:${session?.user?.id || 'signed-out'}`
 }
 
@@ -165,7 +178,7 @@ function initializeUnreadTracking() {
     const savedSeen = JSON.parse(window.localStorage.getItem(userStorageKey(POST_SEEN_KEY)) || '{}')
     if (savedSeen && typeof savedSeen === 'object' && !Array.isArray(savedSeen)) {
       postSeenAt = Object.fromEntries(
-        Object.entries(savedSeen).filter(([, value]) => Number.isFinite(Number(value))),
+        Object.entries(savedSeen).filter(([, value]) => Number.isFinite(Number(value))).map(([key, value]) => [key, Number(value)]),
       )
     }
   } catch {
@@ -173,7 +186,7 @@ function initializeUnreadTracking() {
   }
 }
 
-function lastSeenAt(postId) {
+function lastSeenAt(postId: string | number) {
   return Number(postSeenAt[String(postId)]) || unreadBaselineAt
 }
 
@@ -181,9 +194,9 @@ function celebrateMilestones() {
   if (!session) return
   const key = userStorageKey(MILESTONES_KEY)
   try {
-    const saved = JSON.parse(window.localStorage.getItem(key))
+    const saved = JSON.parse(window.localStorage.getItem(key) || 'null')
     const firstRun = !saved || typeof saved !== 'object' || Array.isArray(saved)
-    const known = firstRun ? {} : saved
+    const known: Record<string, number> = firstRun ? {} : saved as Record<string, number>
     // 只看第一页：更早的帖子要靠「加载更多」或深链接才会取回，
     // 算进来会把很久以前的回答当成「第一次」报出来。
     const fresh = reachedMilestones(cachedPosts.slice(0, LIMITS.pageSize))
@@ -192,13 +205,13 @@ function celebrateMilestones() {
     fresh.forEach((name) => { known[name] = Date.now() })
     window.localStorage.setItem(key, JSON.stringify(known))
     // 第一次只默默记下已经达成的，否则老成员一上线会被祝贺一堆旧事。
-    if (!firstRun) showToast(MILESTONES[fresh[0]])
+    if (!firstRun && fresh[0]) showToast(MILESTONES[fresh[0] as keyof typeof MILESTONES])
   } catch {
     // 存不下就分不清新旧，宁可不提示，也不要每次刷新都重复祝贺。
   }
 }
 
-function markPostSeen(postId) {
+function markPostSeen(postId: string | number) {
   const normalized = normalizePostId(postId)
   if (!normalized) return
   initializeUnreadTracking()
@@ -273,7 +286,7 @@ function targetPostId() {
   return postIdFromSearch(window.location.search) || storedTargetPostId()
 }
 
-function rememberTargetPost(postId) {
+function rememberTargetPost(postId: string | number | null) {
   const normalized = normalizePostId(postId)
   if (!normalized) return
   try {
@@ -295,7 +308,7 @@ function restoreTargetPostUrl() {
   return stored
 }
 
-function setTargetPostUrl(postId) {
+function setTargetPostUrl(postId: string | number | null) {
   const normalized = normalizePostId(postId)
   if (normalized) rememberTargetPost(normalized)
   else clearStoredTargetPost()
@@ -318,7 +331,7 @@ function isWechatBrowser() {
 // 没提交的字一起扔掉。草稿存在 DOM 之外，重绘后再填回去，并按用户写入
 // localStorage，刷新或走完登录还能在。退出登录时整份删掉。
 const DRAFTS_KEY = backendStorageKey('situational-awareness-drafts', backend.mode)
-let draftOwnerId = null
+let draftOwnerId: string | null = null
 let restoringDrafts = false
 
 function persistDrafts() {
@@ -339,12 +352,13 @@ function persistDrafts() {
   }
 }
 
-function trackDrafts(map) {
+function trackDrafts<K, V>(map: Map<K, V>): Map<K, V> {
   return new Proxy(map, {
-    get(target, prop) {
+    get(target, prop: keyof Map<K, V>) {
       if (prop === 'set' || prop === 'delete' || prop === 'clear') {
-        return (...args) => {
-          const result = target[prop](...args)
+        return (...args: [K, V] | [K] | []) => {
+          const method = target[prop] as (...values: never[]) => unknown
+          const result = Reflect.apply(method, target, args)
           persistDrafts()
           return result
         }
@@ -355,20 +369,20 @@ function trackDrafts(map) {
   })
 }
 
-const replyDrafts = trackDrafts(new Map())
-const editDrafts = trackDrafts(new Map())
-const postEditDrafts = trackDrafts(new Map())
-const threadPersonas = new Map()
-const collapsedReplyThreads = new Set()
+const replyDrafts = trackDrafts(new Map<string, { body: string; anonymous: boolean }>())
+const editDrafts = trackDrafts(new Map<string, string>())
+const postEditDrafts = trackDrafts(new Map<string, { title: string; body: string }>())
+const threadPersonas = new Map<string, { name: string; emoji: string }>()
+const collapsedReplyThreads = new Set<string>()
 
-function restoreDrafts(userId) {
+function restoreDrafts(userId: string) {
   draftOwnerId = userId
   restoringDrafts = true
   replyDrafts.clear()
   editDrafts.clear()
   postEditDrafts.clear()
   try {
-    const saved = JSON.parse(window.localStorage.getItem(`${DRAFTS_KEY}:${userId}`) || 'null')
+    const saved = JSON.parse(window.localStorage.getItem(`${DRAFTS_KEY}:${userId}`) || 'null') as { replies?: Record<string, { body?: unknown; anonymous?: unknown }>; edits?: Record<string, unknown>; posts?: Record<string, { title?: unknown; body?: unknown }> } | null
     if (saved && typeof saved === 'object') {
       for (const [key, value] of Object.entries(saved.replies || {})) {
         if (value && typeof value.body === 'string') {
@@ -390,10 +404,10 @@ function restoreDrafts(userId) {
   restoringDrafts = false
 }
 
-function showPanel(name) {
+function showPanel(name: string) {
   if (name !== 'me' && profileViewState.previewing) {
     profileViewState = exitProfilePreview(profileViewState)
-    document.querySelector('#panel-me').classList.remove('profile-previewing')
+    query('#panel-me').classList.remove('profile-previewing')
     renderProfilePanel()
   }
   elements.panels.forEach((panel) => {
@@ -405,7 +419,7 @@ function showPanel(name) {
   })
 }
 
-function setView(view) {
+function setView(view: 'loading' | 'login' | 'invite' | 'app') {
   elements.loading.hidden = view !== 'loading'
   elements.login.hidden = view !== 'login'
   elements.inviteView.hidden = view !== 'invite'
@@ -428,7 +442,7 @@ function toggleTheme() {
   }
 }
 
-function setButtonBusy(button, busy, busyText) {
+function setButtonBusy(button: HTMLButtonElement, busy: boolean, busyText = '') {
   const label = button.querySelector('span') || button
   if (busy) {
     button.dataset.label = label.textContent
@@ -442,16 +456,16 @@ function setButtonBusy(button, busy, busyText) {
   }
 }
 
-function showToast(message, kind = 'normal') {
-  window.clearTimeout(toastTimer)
+function showToast(message: string, kind: 'normal' | 'error' = 'normal') {
+  if (toastTimer !== null) window.clearTimeout(toastTimer)
   elements.toast.textContent = message
   elements.toast.dataset.kind = kind
   elements.toast.classList.add('show')
   toastTimer = window.setTimeout(() => elements.toast.classList.remove('show'), 3200)
 }
 
-function friendlyError(error) {
-  const message = String(error?.message || error || '')
+function friendlyError(error: unknown) {
+  const message = String(error instanceof Error ? error.message : error || '')
   if (/not_authenticated/i.test(message)) {
     return '登录状态已失效，请重新登录后再试。'
   }
@@ -473,7 +487,7 @@ function applyLimits() {
   elements.feedbackBody.maxLength = LIMITS.feedbackMax
 }
 
-function attachCharacterCount(field, counter, max) {
+function attachCharacterCount(field: HTMLInputElement | HTMLTextAreaElement, counter: HTMLElement, max: number) {
   const render = () => {
     counter.textContent = `${field.value.length} / ${max}`
   }
@@ -482,7 +496,7 @@ function attachCharacterCount(field, counter, max) {
   return render
 }
 
-function confirmAction({ title, body, confirmLabel }) {
+function confirmAction({ title, body, confirmLabel }: { title: string; body: string; confirmLabel: string }) {
   elements.confirmTitle.textContent = title
   elements.confirmBody.textContent = body
   elements.confirmAccept.textContent = confirmLabel
@@ -499,7 +513,7 @@ function confirmAction({ title, body, confirmLabel }) {
   })
 }
 
-function element(tag, className, text) {
+function element<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag)
   if (className) node.className = className
   if (text !== undefined) node.textContent = text
@@ -507,7 +521,7 @@ function element(tag, className, text) {
 }
 
 // 悬停提示在触屏上看不到，所以点一下也能在原地切成具体时间。
-function makeTime(className, input) {
+function makeTime(className: string, input: string) {
   const relative = formatRelativeTime(input)
   const node = element('time', className, relative)
   const absolute = formatAbsoluteTime(input)
@@ -523,7 +537,7 @@ function makeTime(className, input) {
   return node
 }
 
-function submitOnCommandEnter(form) {
+function submitOnCommandEnter(form: HTMLFormElement) {
   form.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter' || !(event.metaKey || event.ctrlKey)) return
     event.preventDefault()
@@ -531,7 +545,7 @@ function submitOnCommandEnter(form) {
   })
 }
 
-function makeMarkdownBody(className, source) {
+function makeMarkdownBody(className: string, source: string) {
   const body = element('div', `${className} markdown-body`)
   try {
     body.innerHTML = renderMarkdown(source)
@@ -541,26 +555,26 @@ function makeMarkdownBody(className, source) {
   return body
 }
 
-function personaFor(id) {
+function personaFor(id: string | number) {
   return threadPersonas.get(String(id)) || anonymousPersona(id)
 }
 
-function rememberThreadPersonas(post) {
+function rememberThreadPersonas(post: Post) {
   const anonymousIds = [
     ...(post.is_anonymous ? [{ id: `post-${post.id}`, created_at: post.created_at }] : []),
     ...post.replies
       .filter((reply) => reply.is_anonymous)
       .map((reply) => ({ id: `reply-${reply.id}`, created_at: reply.created_at })),
   ]
-    .sort((left, right) => new Date(left.created_at) - new Date(right.created_at))
+    .sort((left, right) => new Date(left.created_at).getTime() - new Date(right.created_at).getTime())
     .map((item) => item.id)
   for (const [id, persona] of assignAnonymousPersonas(anonymousIds)) threadPersonas.set(id, persona)
 }
 
-function makeAvatar(name, avatarUrl, anonymous = false, onOpen = null, personaId = null) {
-  const persona = anonymous ? personaFor(personaId) : null
+function makeAvatar(name: string, avatarUrl: string | null | undefined, anonymous = false, onOpen: (() => void) | null = null, personaId: string | number | null = null) {
+  const persona = anonymous ? personaFor(personaId ?? '') : null
   const pokeable = Boolean(persona) && !onOpen
-  const wrapper = element(onOpen || pokeable ? 'button' : 'div', anonymous ? 'avatar anonymous' : 'avatar')
+  const wrapper = element(onOpen || pokeable ? 'button' : 'div', anonymous ? 'avatar anonymous' : 'avatar') as HTMLButtonElement
   if (onOpen) {
     wrapper.type = 'button'
     wrapper.setAttribute('aria-label', `查看${name || '成员'}的主页`)
@@ -576,7 +590,7 @@ function makeAvatar(name, avatarUrl, anonymous = false, onOpen = null, personaId
       wrapper.classList.remove('is-poked')
       void wrapper.offsetWidth
       wrapper.classList.add('is-poked')
-      showToast(`${persona.emoji} 这只${persona.name}只代表这一条。匿名身份每条随机，不对应任何人。`)
+      showToast(`${persona?.emoji} 这只${persona?.name}只代表这一条。匿名身份每条随机，不对应任何人。`)
     })
     wrapper.addEventListener('animationend', () => wrapper.classList.remove('is-poked'))
   }
@@ -599,7 +613,7 @@ function makeAvatar(name, avatarUrl, anonymous = false, onOpen = null, personaId
   return wrapper
 }
 
-function makeReply(reply, { highlighted = false, unread = false, replyMap = new Map(), threadRootId = null } = {}) {
+function makeReply(reply: Reply, { highlighted = false, unread = false, replyMap = new Map<string, Reply>(), threadRootId = null }: { highlighted?: boolean; unread?: boolean; replyMap?: Map<string, Reply>; threadRootId?: string | number | null } = {}) {
   const draftKey = String(reply.id)
   const anonymous = Boolean(reply.is_anonymous)
   const item = element('li', highlighted ? 'reply is-insight' : 'reply')
@@ -662,7 +676,7 @@ function makeReply(reply, { highlighted = false, unread = false, replyMap = new 
       form = makeReplyForm(reply.post_id, reply)
       content.append(form)
     }
-    if (focus) form.querySelector('textarea').focus()
+    if (focus) form.querySelector<HTMLTextAreaElement>('textarea')?.focus()
   }
   respond.addEventListener('click', () => openResponse())
   if (replyDrafts.has(responseKey)) openResponse(false)
@@ -739,7 +753,7 @@ function makeReply(reply, { highlighted = false, unread = false, replyMap = new 
   return item
 }
 
-function makeReplyToolbar(reply, { onEdit, respond }) {
+function makeReplyToolbar(reply: Reply, { onEdit, respond }: { onEdit: () => void; respond: HTMLButtonElement }) {
   const toolbar = element('div', 'reply-toolbar')
   const end = element('div', 'reply-end')
   toolbar.append(makeReplyVoteButton(reply), end)
@@ -780,17 +794,17 @@ function makeReplyToolbar(reply, { onEdit, respond }) {
   return toolbar
 }
 
-function currentDisplayName() {
+function currentDisplayName(): string {
   return ownProfile?.display_name || displayName(session?.user)
 }
 
-function replyIdentityText(anonymous) {
+function replyIdentityText(anonymous: boolean) {
   return anonymous
     ? '将以匿名身份回复'
     : `将以 ${currentDisplayName()} 的名义回复`
 }
 
-function postIdentityText(anonymous) {
+function postIdentityText(anonymous: boolean) {
   return anonymous
     ? '将以匿名身份发布'
     : `将以 ${currentDisplayName()} 的名义发布`
@@ -813,7 +827,7 @@ function makeShareIcon() {
   return svg
 }
 
-function rememberVote(target, liked, count) {
+function rememberVote(target: { postId?: string | number; replyId?: string | number }, liked: boolean, count: number) {
   cachedPosts = withRememberedVote(cachedPosts, target, liked, count)
   searchResults = {
     ...searchResults,
@@ -821,7 +835,7 @@ function rememberVote(target, liked, count) {
   }
 }
 
-function withRememberedVote(posts, target, liked, count) {
+function withRememberedVote(posts: Post[], target: { postId?: string | number; replyId?: string | number }, liked: boolean, count: number): Post[] {
   return posts.map((post) => {
     if (target.postId != null && String(post.id) === String(target.postId)) {
       return { ...post, liked_by_me: liked, upvote_count: count }
@@ -840,7 +854,7 @@ function withRememberedVote(posts, target, liked, count) {
   })
 }
 
-function makeVoteButton({ likedByMe, upvoteCount, onToggle, remember, question = false }) {
+function makeVoteButton({ likedByMe, upvoteCount, onToggle, remember, question = false }: { likedByMe: boolean; upvoteCount: number; onToggle: () => Promise<void>; remember: (liked: boolean, count: number) => void; question?: boolean }) {
   let liked = Boolean(likedByMe)
   let count = Math.max(0, Number(upvoteCount) || 0)
   const button = document.createElement('button')
@@ -890,7 +904,7 @@ function makeVoteButton({ likedByMe, upvoteCount, onToggle, remember, question =
   return button
 }
 
-function makePostVoteButton(post) {
+function makePostVoteButton(post: Post) {
   return makeVoteButton({
     likedByMe: post.liked_by_me,
     upvoteCount: post.upvote_count,
@@ -900,7 +914,7 @@ function makePostVoteButton(post) {
   })
 }
 
-function makeReplyVoteButton(reply) {
+function makeReplyVoteButton(reply: Reply) {
   return makeVoteButton({
     likedByMe: reply.liked_by_me,
     upvoteCount: reply.upvote_count,
@@ -909,7 +923,7 @@ function makeReplyVoteButton(reply) {
   })
 }
 
-function makeReplyForm(postId, target = null) {
+function makeReplyForm(postId: string | number, target: Reply | null = null) {
   const draftKey = target ? `${postId}:${target.id}` : String(postId)
   const draft = replyDrafts.get(draftKey)
   const form = element('form', target ? 'reply-form nested-reply-form' : 'reply-form')
@@ -999,7 +1013,7 @@ function makeReplyForm(postId, target = null) {
   return form
 }
 
-function namedRepliers(replies, limit = 4) {
+function namedRepliers(replies: Reply[], limit = 4) {
   const seen = new Set()
   const faces = []
   for (const reply of replies) {
@@ -1014,7 +1028,7 @@ function namedRepliers(replies, limit = 4) {
   return faces
 }
 
-function makeInsightPreview(reply) {
+function makeInsightPreview(reply: Reply) {
   const preview = element('div', 'insight-preview')
   const who = reply.is_anonymous ? personaFor(`reply-${reply.id}`).name : reply.author_name || '成员'
   const byline = element('span', 'insight-preview-who')
@@ -1027,12 +1041,12 @@ function makeInsightPreview(reply) {
   return preview
 }
 
-function bodyMoreButton(body) {
-  const next = body.nextElementSibling
+function bodyMoreButton(body: HTMLElement): HTMLElement | null {
+  const next = body.nextElementSibling as HTMLElement | null
   return next?.classList.contains('body-more') ? next : null
 }
 
-function setupCollapsibleBody(body, attempts = 0) {
+function setupCollapsibleBody(body: HTMLElement, attempts = 0) {
   if (body.dataset.collapseReady || body.hidden) return
   if (!body.isConnected) {
     if (attempts < 4) requestAnimationFrame(() => setupCollapsibleBody(body, attempts + 1))
@@ -1057,7 +1071,7 @@ function setupCollapsibleBody(body, attempts = 0) {
   body.after(more)
 }
 
-function forgetPostDrafts(post) {
+function forgetPostDrafts(post: Post) {
   postEditDrafts.delete(String(post.id))
   for (const key of replyDrafts.keys()) {
     if (key === String(post.id) || key.startsWith(`${post.id}:`)) replyDrafts.delete(key)
@@ -1065,7 +1079,7 @@ function forgetPostDrafts(post) {
   for (const reply of post.replies) editDrafts.delete(String(reply.id))
 }
 
-function makePost(post, shouldOpen = false, { detail = false } = {}) {
+function makePost(post: Post, shouldOpen = false, { detail = false }: { detail?: boolean } = {}) {
   rememberThreadPersonas(post)
   const article = element('article', 'post-card')
   article.id = `post-${post.id}`
@@ -1227,12 +1241,12 @@ function makePost(post, shouldOpen = false, { detail = false } = {}) {
     if (insightEl) insightEl.hidden = false
     const more = bodyMoreButton(body)
     if (more) more.hidden = false
-    article.querySelector('.post-edit')?.remove()
+    article.querySelector<HTMLFormElement>('.post-edit')?.remove()
     if (!detail) requestAnimationFrame(() => setupCollapsibleBody(body))
   }
 
   function enterEdit({ focus = true } = {}) {
-    if (article.querySelector('.post-edit')) return
+    if (article.querySelector<HTMLFormElement>('.post-edit')) return
 
     heading.hidden = true
     body.hidden = true
@@ -1350,7 +1364,7 @@ function makePost(post, shouldOpen = false, { detail = false } = {}) {
   return article
 }
 
-function likedAuthorLabel(item, kind) {
+function likedAuthorLabel(item: Pick<Post, 'is_anonymous' | 'author_name' | 'id'> | Pick<Reply, 'is_anonymous' | 'author_name' | 'id'>, kind: 'post' | 'reply') {
   if (!item.is_anonymous) return item.author_name || '成员'
   return personaFor(`${kind}-${item.id}`).name
 }
@@ -1367,19 +1381,20 @@ function backArrowIcon() {
   return svg
 }
 
-const DETAIL_ORIGIN_LABELS = { likes: '返回赞过', me: '返回我的讨论' }
+const DETAIL_ORIGIN_LABELS: Record<string, string> = { feed: '返回讨论广场', likes: '返回赞过', me: '返回我的讨论' }
 
 function returnToOrigin() {
   const origin = detailOrigin
   const scroll = originReturnScroll
   detailOrigin = null
   setTargetPostUrl(null)
+  if (!origin) return
   showPanel(origin)
   window.scrollTo({ top: scroll })
 }
 
 function makeDetailBack() {
-  const label = DETAIL_ORIGIN_LABELS[detailOrigin]
+  const label = detailOrigin ? DETAIL_ORIGIN_LABELS[detailOrigin] : undefined
   if (label) {
     const back = element('button', 'icon-button post-detail-back')
     back.type = 'button'
@@ -1402,7 +1417,7 @@ function makeDetailBack() {
   return back
 }
 
-async function openFromPanel(origin, postId, replyId) {
+async function openFromPanel(origin: 'likes' | 'me', postId: string | number, replyId: string | number | null = null) {
   originReturnScroll = window.scrollY || document.documentElement.scrollTop
   detailOrigin = origin
   setTargetPostUrl(postId)
@@ -1418,7 +1433,9 @@ async function openFromPanel(origin, postId, replyId) {
   })
 }
 
-function renderLikeGroup(title, items, emptyText, onItem) {
+type LikeListItem = { id: string | number; post_id?: string | number; heading: string; meta: string }
+
+function renderLikeGroup(title: string, items: LikeListItem[], emptyText: string, onItem: (item: LikeListItem) => void) {
   const group = element('section', 'like-group')
   group.append(element('h2', '', title))
   if (!items.length) {
@@ -1466,7 +1483,7 @@ async function renderLikes() {
           meta: `${likedAuthorLabel(reply, 'reply')} · 在「${reply.post_title}」下 · ${formatRelativeTime(reply.created_at)}`,
         })),
         '还没有赞过的回答。',
-        (reply) => openFromPanel('likes', reply.post_id, reply.id),
+        (reply) => openFromPanel('likes', reply.post_id!, reply.id),
       ),
     )
   } catch (error) {
@@ -1476,7 +1493,7 @@ async function renderLikes() {
   }
 }
 
-function identityLabel(item) {
+function identityLabel(item: Pick<Post, 'is_anonymous'> | Pick<Reply, 'is_anonymous'>) {
   return item.is_anonymous ? '匿名' : '实名'
 }
 
@@ -1507,7 +1524,7 @@ async function renderMyContent() {
           meta: `${identityLabel(reply)} · 在「${reply.post_title}」下 · ${formatRelativeTime(reply.created_at)}`,
         })),
         '还没有回过别人。',
-        (reply) => openFromPanel('me', reply.post_id, reply.id),
+        (reply) => openFromPanel('me', reply.post_id!, reply.id),
       ),
     )
   } catch (error) {
@@ -1529,13 +1546,13 @@ elements.backToTop.addEventListener('click', () => {
 })
 
 const COMPASS_LINE = '指针回到正北。知局：先看清局面，再做判断。'
-let brandClicks = []
+let brandClicks: number[] = []
 
 // 已经在广场首页时，点 logo 只回到顶部、不整页重载（重载会丢掉没发出去的草稿）。
 // 两秒内连点五下，罗盘转一圈找回正北。
 elements.brandLink.addEventListener('click', (event) => {
   if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
-  if (postIdFromSearch(window.location.search) || document.querySelector('#panel-feed').hidden) return
+  if (postIdFromSearch(window.location.search) || query('#panel-feed').hidden) return
   event.preventDefault()
   window.scrollTo({ top: 0, behavior: 'smooth' })
 
@@ -1543,29 +1560,29 @@ elements.brandLink.addEventListener('click', (event) => {
   brandClicks = [...brandClicks.filter((time) => now - time < 2000), now]
   if (brandClicks.length < 5) return
   brandClicks = []
-  const mark = elements.brandLink.querySelector('.brand-mark')
+  const mark = elements.brandLink.querySelector<HTMLElement>('.brand-mark')!
   mark.classList.remove('is-finding-north')
   void mark.offsetWidth
   mark.classList.add('is-finding-north')
   showToast(COMPASS_LINE)
 })
 
-elements.brandLink.addEventListener('animationend', (event) => {
+elements.brandLink.addEventListener('animationend', (event: AnimationEvent) => {
   if (event.animationName === 'compass-find-north') {
-    elements.brandLink.querySelector('.brand-mark').classList.remove('is-finding-north')
+    elements.brandLink.querySelector<HTMLElement>('.brand-mark')!.classList.remove('is-finding-north')
   }
 })
 
-function openPostIds() {
+function openPostIds(): Set<string> {
   return new Set(
-    [...elements.feed.querySelectorAll('.thread-panel[data-post-id]:not([hidden])')].map(
-      (panel) => panel.dataset.postId,
+    [...elements.feed.querySelectorAll<HTMLElement>('.thread-panel[data-post-id]:not([hidden])')].map(
+      (panel) => panel.dataset.postId || '',
     ),
   )
 }
 
 // 已加载的帖子优先用本地那份（点赞、回复都是最新的），服务端只补更早的。
-function searchMatches(query, serverPosts) {
+function searchMatches(query: string, serverPosts: Post[]): Post[] {
   const byId = new Map()
   for (const post of cachedPosts) {
     if (post.title.toLowerCase().includes(query) || post.body.toLowerCase().includes(query)) {
@@ -1575,10 +1592,10 @@ function searchMatches(query, serverPosts) {
   for (const post of serverPosts) {
     if (!byId.has(String(post.id))) byId.set(String(post.id), post)
   }
-  return [...byId.values()].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+  return [...byId.values()].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
 }
 
-function renderFeed(previouslyOpen = new Set()) {
+function renderFeed(previouslyOpen: Set<string> = new Set()) {
   const requestedPost = targetPostId()
   const detailPost = requestedPost
     ? cachedPosts.find((post) => String(post.id) === requestedPost)
@@ -1634,7 +1651,7 @@ function renderFeed(previouslyOpen = new Set()) {
       elements.feed.append(makePost(post, previouslyOpen.has(String(post.id)))),
     )
     requestAnimationFrame(() => {
-      elements.feed.querySelectorAll('.post-body').forEach((body) => setupCollapsibleBody(body))
+      elements.feed.querySelectorAll<HTMLElement>('.post-body').forEach((body) => setupCollapsibleBody(body))
     })
     return
   }
@@ -1675,7 +1692,7 @@ function showFeedSkeleton() {
   }
 }
 
-async function loadPosts({ preserveOpenPost = null, quiet = false } = {}) {
+async function loadPosts({ preserveOpenPost = null, quiet = false }: { preserveOpenPost?: string | null; quiet?: boolean } = {}) {
   if (loadingPosts) return
   loadingPosts = true
   const previouslyOpen = openPostIds()
@@ -1699,7 +1716,8 @@ async function loadPosts({ preserveOpenPost = null, quiet = false } = {}) {
       page.length === LIMITS.pageSize &&
       !cachedPosts.some((post) => String(post.id) === requestedPost)
     ) {
-      page = await backend.listPosts({ before: cachedPosts.at(-1).created_at, before_id: cachedPosts.at(-1).id })
+      const cursor = cachedPosts.at(-1)!
+      page = await backend.listPosts({ before: cursor.created_at, before_id: cursor.id })
       cachedPosts = [...cachedPosts, ...page]
     }
 
@@ -1743,7 +1761,8 @@ async function loadMorePosts() {
   setButtonBusy(elements.loadMoreButton, true, '加载中…')
 
   try {
-    const page = await backend.listPosts({ before: cachedPosts.at(-1).created_at, before_id: cachedPosts.at(-1).id })
+    const cursor = cachedPosts.at(-1)!
+    const page = await backend.listPosts({ before: cursor.created_at, before_id: cursor.id })
     cachedPosts = [...cachedPosts, ...page]
     hasMorePosts = page.length === LIMITS.pageSize
     renderFeed(openPostIds())
@@ -1755,7 +1774,7 @@ async function loadMorePosts() {
   }
 }
 
-async function renderSession(nextSession) {
+async function renderSession(nextSession: AppSession | null) {
   if (!nextSession) {
     replyDrafts.clear()
     editDrafts.clear()
@@ -1770,7 +1789,7 @@ async function renderSession(nextSession) {
     elements.accountName.textContent = ''
     elements.feed.replaceChildren()
     elements.feedbackDialog.close()
-    document.querySelector('#profile-dialog').close()
+    query<HTMLDialogElement>('#profile-dialog').close()
     cachedPosts = []
     hasMorePosts = false
     searchQuery = ''
@@ -1786,12 +1805,12 @@ async function renderSession(nextSession) {
   restoreDrafts(session.user.id)
   const access = await backend.memberAccess()
   isAdmin = access.is_admin
-  document.querySelector('#admin-tools').hidden = !isAdmin
+  query('#admin-tools').hidden = !isAdmin
   if (!access.is_member) {
     elements.inviteError.hidden = !access.is_disabled
     elements.inviteError.textContent = access.is_disabled ? '此账号已被停用。如有疑问，请联系管理员。' : ''
     elements.inviteForm.hidden = access.is_disabled
-    document.querySelector('#invite-title').textContent = access.is_disabled ? '账号已停用。' : '输入邀请码，加入讨论。'
+    query('#invite-title').textContent = access.is_disabled ? '账号已停用。' : '输入邀请码，加入讨论。'
     elements.inviteCodeInput.value = ''
     setView('invite')
     return
@@ -1820,7 +1839,7 @@ async function copyCurrentEntryLink() {
   const url = postUrl(window.location.href, requestedPost)
   if (requestedPost) rememberTargetPost(requestedPost)
   try {
-    await navigator.clipboard.writeText(postShareText(requested?.title, url))
+    await navigator.clipboard.writeText(postShareText(requested?.title || '', url))
     showToast(requestedPost ? '帖子链接已复制，请在 Safari 或 Chrome 中打开。' : '网站链接已复制，请在 Safari 或 Chrome 中打开。')
   } catch {
     showToast('请从浏览器地址栏复制完整链接，在 Safari 或 Chrome 中打开。', 'error')
@@ -1837,13 +1856,14 @@ elements.notificationButton.addEventListener('click', () => {
 })
 
 document.addEventListener('click', (event) => {
-  if (!event.target.closest('.notification-menu')) closeNotifications()
+  if (!(event.target instanceof Element) || !event.target.closest('.notification-menu')) closeNotifications()
 })
 
-function shortcutBlocked(target) {
-  const tag = target?.tagName
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) return true
-  return Boolean(target?.closest?.('dialog[open]'))
+function shortcutBlocked(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false
+  const tag = target.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) return true
+  return Boolean(target.closest('dialog[open]'))
 }
 
 document.addEventListener('keydown', (event) => {
@@ -1900,7 +1920,7 @@ elements.inviteForm.addEventListener('submit', async (event) => {
     return
   }
 
-  const button = elements.inviteForm.querySelector('button[type="submit"]')
+  const button = elements.inviteForm.querySelector<HTMLButtonElement>('button[type="submit"]')!
   setButtonBusy(button, true, '加入中…')
   try {
     const admitted = await backend.redeemInviteCode(result.value)
@@ -1943,14 +1963,14 @@ elements.panelLinks.forEach((link) => {
       detailOrigin = null
       setTargetPostUrl(null)
     }
-    showPanel(link.dataset.panel)
+    showPanel(link.dataset.panel || 'feed')
     if (link.dataset.panel === 'likes') renderLikes()
     if (link.dataset.panel === 'me') renderMyContent()
   })
 })
 
 // quiet：结果刷新时保留旧结果，不闪一下「正在搜索」，展开的帖子也不收起。
-async function runServerSearch(query, { quiet = false } = {}) {
+async function runServerSearch(query: string, { quiet = false }: { quiet?: boolean } = {}) {
   const request = ++searchRequest
   if (!quiet) {
     searchResults = { query, posts: [], loading: true }
@@ -1975,7 +1995,7 @@ elements.searchInput.addEventListener('input', () => {
   // 只有讨论广场里有可搜的东西，所以搜索时把人带回那一栏
   showPanel('feed')
   // 每次都要重建整个列表，所以别一个字符跑一次
-  window.clearTimeout(searchTimer)
+  if (searchTimer !== null) window.clearTimeout(searchTimer)
   const query = searchQuery.trim()
   if (!query) {
     searchRequest += 1
@@ -2003,7 +2023,7 @@ elements.feedbackForm.addEventListener('submit', async (event) => {
     return
   }
 
-  const button = elements.feedbackForm.querySelector('button[type="submit"]')
+  const button = elements.feedbackForm.querySelector<HTMLButtonElement>('button[type="submit"]')!
   setButtonBusy(button, true, '发送中…')
   try {
     await backend.createFeedback(result.value)
@@ -2064,7 +2084,7 @@ function updatePostIdentity() {
   updateComposerToggle()
 }
 
-function setComposerOpen(open, { focus = true } = {}) {
+function setComposerOpen(open: boolean, { focus = true }: { focus?: boolean } = {}) {
   elements.postForm.classList.toggle('is-open', open)
   elements.composerToggle.hidden = open
   elements.composerToggle.setAttribute('aria-expanded', String(open))
@@ -2101,7 +2121,7 @@ elements.postForm.addEventListener('submit', async (event) => {
     return
   }
 
-  const button = elements.postForm.querySelector('button[type="submit"]')
+  const button = elements.postForm.querySelector<HTMLButtonElement>('button[type="submit"]')!
   setButtonBusy(button, true, '发布中…')
   try {
     const post = { ...result.value, is_anonymous: elements.postAnonymous.checked }
@@ -2126,7 +2146,7 @@ async function start() {
   restoreTargetPostUrl()
   elements.wechatBrowserNotice.hidden = !isWechatBrowser()
   elements.demoBanner.hidden = !backend.isDemo
-  if (backend.isDemo) elements.loginButton.querySelector('span').textContent = '进入演示版'
+  if (backend.isDemo) elements.loginButton.querySelector<HTMLElement>('span')!.textContent = '进入演示版'
 
   backend.onAuthChange((nextSession) => {
     renderSession(nextSession).catch((error) => {
@@ -2146,7 +2166,7 @@ async function start() {
 start()
 
 async function loadAdminMembers() {
-  const list = document.querySelector('#admin-members')
+  const list = query<HTMLElement>('#admin-members')
   list.textContent = '加载中…'
   try {
     const members = await backend.adminMembers()
@@ -2154,7 +2174,7 @@ async function loadAdminMembers() {
     for (const member of members) {
       const row = element('div', 'admin-member')
       const identity = element('div')
-      const roleText = roleLabel(member.role, member.cohort_name) || '未选角色'
+      const roleText = roleLabel(member.role || '', member.cohort_name || '') || '未选角色'
       identity.append(
         element('strong', '', member.display_name || member.name || '成员'),
         element('p', '', member.email || ''),
@@ -2167,7 +2187,7 @@ async function loadAdminMembers() {
         verify.addEventListener('click', async () => {
           setButtonBusy(verify, true, '保存中…')
           try {
-            await backend.adminSetRoleVerified(member.user_id, !member.role_verified)
+            await backend.adminSetRoleVerified(member.user_id || member.id, !member.role_verified)
             await loadAdminMembers()
             showToast(member.role_verified ? '已取消认证。' : '已认证这个角色。')
           } catch (error) {
@@ -2184,7 +2204,7 @@ async function loadAdminMembers() {
           if (!await confirmAction({ title: member.is_disabled ? '恢复这个账号？' : '停用这个账号？', body: `${member.name || '成员'}（${member.email || ''}）${member.is_disabled ? '将重新获得社区访问权限。' : '将无法访问社区、发帖、回复或点赞。已有内容会保留。'}`, confirmLabel: member.is_disabled ? '恢复' : '停用' })) return
           setButtonBusy(button, true, '保存中…')
           try {
-            await backend.adminSetDisabled(member.user_id, !member.is_disabled)
+            await backend.adminSetDisabled(member.user_id || member.id, !member.is_disabled)
             await loadAdminMembers()
             showToast('账号状态已更新。')
           } catch (error) { showToast(friendlyError(error), 'error'); setButtonBusy(button, false) }
@@ -2195,15 +2215,16 @@ async function loadAdminMembers() {
     }
   } catch (error) { list.textContent = friendlyError(error) }
 }
-document.querySelector('#admin-load-members').addEventListener('click', loadAdminMembers)
+query<HTMLButtonElement>('#admin-load-members').addEventListener('click', loadAdminMembers)
 
-function linkableProfile(item, anonymous) {
-  if (anonymous || !item?.author_public_id) return null
-  return () => showProfile(item.author_public_id)
+function linkableProfile(item: Post | Reply, anonymous: boolean): (() => void) | null {
+  const publicId = item.author_public_id
+  if (anonymous || !publicId) return null
+  return () => showProfile(publicId)
 }
 
-function makeAuthorName(name, publicId, anonymous, className, personaId = null) {
-  const label = anonymous ? personaFor(personaId).name : name || '成员'
+function makeAuthorName(name: string, publicId: string | null | undefined, anonymous: boolean, className: string, personaId: string | number | null = null) {
+  const label = anonymous ? personaFor(personaId ?? '').name : name || '成员'
   if (anonymous || !publicId) return element('strong', className, label)
   const button = element('button', `author-link ${className}`)
   button.type = 'button'
@@ -2212,25 +2233,25 @@ function makeAuthorName(name, publicId, anonymous, className, personaId = null) 
   return button
 }
 
-function makeRoleTag(role, cohortName, verified) {
-  const label = roleLabel(role, cohortName)
+function makeRoleTag(role: string | null | undefined, cohortName: string | null | undefined, verified: boolean | undefined) {
+  const label = roleLabel(role || '', cohortName || '')
   if (!label) return null
   const tag = element('span', 'role-tag', label)
   if (verified) tag.append(element('span', 'verified-mark', '✓ 已认证'))
   return tag
 }
 
-function textInput(id, value, max) {
+function textInput(id: string, value: string | number | null | undefined, max: number) {
   const input = document.createElement('input')
   input.id = id
   input.type = 'text'
   input.maxLength = max
-  input.value = value || ''
+  input.value = value == null ? '' : String(value)
   input.autocomplete = 'off'
   return input
 }
 
-function selectInput(id, options, value) {
+function selectInput(id: string, options: Array<[string, string]>, value: string | number | null | undefined) {
   const select = document.createElement('select')
   select.id = id
   for (const [optionValue, label] of options) select.append(new Option(label, optionValue))
@@ -2238,7 +2259,7 @@ function selectInput(id, options, value) {
   return select
 }
 
-function profileAvatarBlock(profile) {
+function profileAvatarBlock(profile: Profile) {
   const block = element('div', 'profile-avatar-block')
   const host = element('div')
   host.id = 'profile-avatar-host'
@@ -2264,7 +2285,7 @@ function profileAvatarBlock(profile) {
   return block
 }
 
-const CONTACT_ICONS = {
+const CONTACT_ICONS: Record<ContactIcon, { body: string; filled?: boolean }> = {
   linkedin: {
     filled: true,
     body: '<path d="M20.45 20.45h-3.55v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13ZM7.12 20.45H3.56V9h3.56v11.45ZM22.23 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"/>',
@@ -2277,7 +2298,9 @@ const CONTACT_ICONS = {
   },
 }
 
-function makeContactIcon(name) {
+type ContactIcon = 'linkedin' | 'mail' | 'wechat'
+
+function makeContactIcon(name: ContactIcon) {
   const icon = CONTACT_ICONS[name]
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
   svg.setAttribute('viewBox', '0 0 24 24')
@@ -2295,25 +2318,25 @@ function makeContactIcon(name) {
   return svg
 }
 
-function makeContactChip(tag, icon, label, text) {
+function makeContactChip(tag: 'a' | 'button', icon: ContactIcon, label: string, text = '') {
   const chip = element(tag, text ? 'contact-chip' : 'contact-chip icon-only')
-  chip.append(makeContactIcon(icon))
+  chip.append(makeContactIcon(icon as ContactIcon))
   if (text) chip.append(element('span', '', text))
   chip.title = label
   chip.setAttribute('aria-label', label)
   return chip
 }
 
-function appendPublicContacts(list, profile) {
+function appendPublicContacts(list: HTMLElement, profile: Profile) {
   if (profile.linkedin_url && validLinkedInUrl(profile.linkedin_url)) {
-    const link = makeContactChip('a', 'linkedin', 'LinkedIn 主页')
+    const link = makeContactChip('a', 'linkedin', 'LinkedIn 主页') as HTMLAnchorElement
     link.href = profile.linkedin_url
     link.target = '_blank'
     link.rel = 'noopener noreferrer'
     list.append(link)
   }
   if (profile.contact_email && validContactEmail(profile.contact_email)) {
-    const link = makeContactChip('a', 'mail', `发邮件给 ${profile.contact_email}`, profile.contact_email)
+    const link = makeContactChip('a', 'mail', `发邮件给 ${profile.contact_email}`, profile.contact_email) as HTMLAnchorElement
     link.href = `mailto:${profile.contact_email}`
     list.append(link)
   }
@@ -2322,7 +2345,7 @@ function appendPublicContacts(list, profile) {
     copy.type = 'button'
     copy.addEventListener('click', async () => {
       try {
-        await navigator.clipboard.writeText(profile.wechat_id)
+        await navigator.clipboard.writeText(profile.wechat_id!)
         showToast('微信号已复制。')
       } catch {
         showToast(`复制失败，微信号是 ${profile.wechat_id}`)
@@ -2332,7 +2355,7 @@ function appendPublicContacts(list, profile) {
   }
 }
 
-function buildProfileSummary(profile) {
+function buildProfileSummary(profile: Profile) {
   const card = element('div', 'profile-summary')
   const head = element('div', 'profile-head')
   const identity = element('div', 'profile-identity')
@@ -2358,25 +2381,25 @@ function buildProfileSummary(profile) {
   return card
 }
 
-function profileContactRows(profile, includePrivate = false) {
+function profileContactRows(profile: Profile, includePrivate = false) {
   const rows = element('div', 'profile-contact-rows')
   const contacts = visibleProfileContacts(profile, includePrivate)
   for (const { icon, label, value, isPublic, key } of contacts) {
     const row = element('div', 'profile-contact-row')
     if (!isPublic) row.classList.add('is-private')
-    row.append(makeContactIcon(icon), element('span', 'profile-contact-label', label))
+    row.append(makeContactIcon(icon as ContactIcon), element('span', 'profile-contact-label', label))
     if (key === 'linkedin_url' && validLinkedInUrl(value)) {
       const link = element('a', 'profile-contact-value', linkedInDisplayValue(value))
-      link.href = value
+      link.href = value || ''
       link.target = '_blank'
       link.rel = 'noopener noreferrer'
       row.append(link)
     } else if (key === 'contact_email' && validContactEmail(value)) {
-      const link = element('a', 'profile-contact-value', value)
+      const link = element('a', 'profile-contact-value', value || '')
       link.href = `mailto:${value}`
       row.append(link)
     } else {
-      row.append(element('span', 'profile-contact-value', value))
+      row.append(element('span', 'profile-contact-value', value || ''))
     }
     if (includePrivate) {
       row.append(element('span', 'profile-contact-visibility', isPublic ? '所有成员可见' : '仅自己可见'))
@@ -2387,7 +2410,7 @@ function profileContactRows(profile, includePrivate = false) {
   return rows
 }
 
-function profileHero(profile) {
+function profileHero(profile: Profile) {
   const hero = element('header', 'profile-hero')
   const identity = element('div', 'profile-hero-identity')
   const name = element('h1', 'profile-name', profile.display_name || '成员')
@@ -2414,42 +2437,42 @@ function buildProfileTabs() {
     button.type = 'button'
     button.setAttribute('aria-current', profileViewState.activeTab === tab ? 'page' : 'false')
     button.addEventListener('click', () => {
-      const form = document.querySelector('#profile-editor')
+      const form = query<HTMLFormElement>('#profile-editor')
       profileViewState = selectProfileTab(profileViewState, tab, form ? profileDraftFromForm(form) : undefined)
       const visibility = profileTabVisibility(profileViewState)
-      document.querySelector('#panel-me').classList.toggle('profile-discussions-active', visibility.showDiscussions)
-      document.querySelector('#panel-me').classList.toggle('profile-profile-active', visibility.showProfile)
-      document.querySelector('#profile-panel .profile-tabs')?.replaceWith(buildProfileTabs())
+      query('#panel-me').classList.toggle('profile-discussions-active', visibility.showDiscussions)
+      query('#panel-me').classList.toggle('profile-profile-active', visibility.showProfile)
+      query('#profile-panel .profile-tabs')?.replaceWith(buildProfileTabs())
     })
     tabs.append(button)
   }
   return tabs
 }
 
-function profileDraftFromForm(form) {
-  const linkedinInput = form.querySelector('#profile-linkedin_url-input').value
+function profileDraftFromForm(form: HTMLFormElement): ProfileDraft {
+  const linkedinInput = form.querySelector<HTMLInputElement>('#profile-linkedin_url-input')!.value
   const linkedin = normalizeLinkedInUrl(linkedinInput)
   return {
-    display_name: form.querySelector('#profile-name-input').value,
-    tagline: form.querySelector('#profile-tagline-input').value,
-    bio: form.querySelector('#profile-bio-input').value,
+    display_name: form.querySelector<HTMLInputElement>('#profile-name-input')!.value,
+    tagline: form.querySelector<HTMLInputElement>('#profile-tagline-input')!.value,
+    bio: form.querySelector<HTMLInputElement>('#profile-bio-input')!.value,
     linkedin_url: linkedin,
-    linkedin_public: form.querySelector('#profile-linkedin_url-visibility-input').value === 'public',
-    contact_email: form.querySelector('#profile-contact_email-input').value,
-    email_public: form.querySelector('#profile-contact_email-visibility-input').value === 'public',
-    wechat_id: form.querySelector('#profile-wechat_id-input').value,
-    wechat_public: form.querySelector('#profile-wechat_id-visibility-input').value === 'public',
-    role: form.querySelector('#profile-role-input').value,
-    cohort_id: form.querySelector('#profile-cohort-input').value,
-    graduation_year: form.querySelector('#profile-year-input').value,
+    linkedin_public: form.querySelector<HTMLSelectElement>('#profile-linkedin_url-visibility-input')!.value === 'public',
+    contact_email: form.querySelector<HTMLInputElement>('#profile-contact_email-input')!.value,
+    email_public: form.querySelector<HTMLSelectElement>('#profile-contact_email-visibility-input')!.value === 'public',
+    wechat_id: form.querySelector<HTMLInputElement>('#profile-wechat_id-input')!.value,
+    wechat_public: form.querySelector<HTMLSelectElement>('#profile-wechat_id-visibility-input')!.value === 'public',
+    role: form.querySelector<HTMLInputElement>('#profile-role-input')!.value,
+    cohort_id: form.querySelector<HTMLInputElement>('#profile-cohort-input')!.value,
+    graduation_year: form.querySelector<HTMLInputElement>('#profile-year-input')!.value,
   }
 }
 
 function updateProfilePreviewState() {
-  const form = document.querySelector('#profile-editor')
+  const form = query<HTMLFormElement>('#profile-editor')
   profileViewState = enterProfilePreview(profileViewState, form ? profileDraftFromForm(form) : undefined)
-  document.querySelector('#panel-me').classList.remove('profile-discussions-active')
-  document.querySelector('#panel-me').classList.toggle('profile-previewing', profileViewState.previewing)
+  query('#panel-me').classList.remove('profile-discussions-active')
+  query('#panel-me').classList.toggle('profile-previewing', profileViewState.previewing)
   renderProfilePanel()
 }
 
@@ -2458,7 +2481,7 @@ function startEditingProfile() {
   renderProfilePanel()
 }
 
-function profileSectionHeading(title, actionLabel, onAction) {
+function profileSectionHeading(title: string, actionLabel: string | null, onAction: () => void) {
   const heading = element('div', 'profile-section-heading')
   heading.append(element('h2', '', title))
   if (actionLabel) {
@@ -2470,7 +2493,7 @@ function profileSectionHeading(title, actionLabel, onAction) {
   return heading
 }
 
-function buildProfileView(profile, memberPreview = false) {
+function buildProfileView(profile: Profile, memberPreview = false) {
   const card = element('div', memberPreview ? 'profile-page is-member-preview' : 'profile-page')
   const toolbar = element('div', 'profile-toolbar')
   if (memberPreview) {
@@ -2481,7 +2504,7 @@ function buildProfileView(profile, memberPreview = false) {
     back.type = 'button'
     back.addEventListener('click', () => {
       profileViewState = exitProfilePreview(profileViewState)
-      document.querySelector('#panel-me').classList.remove('profile-previewing')
+      query('#panel-me').classList.remove('profile-previewing')
       renderProfilePanel()
     })
     toolbar.append(back)
@@ -2521,6 +2544,7 @@ function buildProfileView(profile, memberPreview = false) {
 }
 
 function buildProfileForm() {
+  if (!ownProfile) throw new Error('Profile data is not available.')
   const profile = profileForPresentation(ownProfile, profileViewState)
   const form = element('form', 'profile-form profile-page profile-editing')
   form.id = 'profile-editor'
@@ -2550,7 +2574,7 @@ function buildProfileForm() {
 
   const role = selectInput('profile-role-input', [['', '未选择'], ...Object.entries(ROLES)], profile.role)
 
-  const cohortOptions = cohorts.map((item) => [String(item.id), item.name])
+  const cohortOptions: Array<[string, string]> = cohorts.map((item) => [String(item.id), item.name])
   if (profile.cohort_id && !cohortOptions.some(([id]) => id === String(profile.cohort_id))) {
     cohortOptions.push([String(profile.cohort_id), profile.cohort_name || '当前班级'])
   }
@@ -2559,7 +2583,7 @@ function buildProfileForm() {
     [['', cohorts.length ? '尚未选择' : '班级还没建好'], ...cohortOptions],
     profile.cohort_id,
   )
-  const years = []
+  const years: Array<[string, string]> = []
   for (let value = GRADUATION_YEAR_MAX; value >= GRADUATION_YEAR_MIN; value -= 1) years.push([String(value), String(value)])
   const year = selectInput('profile-year-input', [['', '未选择'], ...years], profile.graduation_year)
 
@@ -2582,19 +2606,19 @@ function buildProfileForm() {
   cohort.addEventListener('change', syncRole)
   syncRole()
 
-  const linkedin = textInput('profile-linkedin_url-input', linkedInDisplayValue(profile.linkedin_url), 160)
+  const linkedin = textInput('profile-linkedin_url-input', linkedInDisplayValue(profile.linkedin_url || ''), 160)
   linkedin.placeholder = 'https://www.linkedin.com/in/…'
   linkedin.inputMode = 'url'
-  const email = textInput('profile-contact_email-input', profile.contact_email, 120)
+  const email = textInput('profile-contact_email-input', profile.contact_email || '', 120)
   email.placeholder = 'name@example.com'
   email.inputMode = 'email'
-  const wechat = textInput('profile-wechat_id-input', profile.wechat_id, 20)
+  const wechat = textInput('profile-wechat_id-input', profile.wechat_id || '', 20)
   wechat.placeholder = '微信号'
 
   const contacts = element('section', 'profile-section')
   contacts.append(element('h2', '', '联系方式'))
   contacts.append(element('p', 'profile-section-note', '每项联系方式都可以单独设置公开范围。'))
-  const contactFields = [
+  const contactFields: Array<[string, string, HTMLInputElement, boolean | undefined, string]> = [
     ['linkedin', 'LinkedIn', linkedin, profile.linkedin_public, 'linkedin_url'],
     ['mail', '联系邮箱', email, profile.email_public, 'contact_email'],
     ['wechat', '微信号', wechat, profile.wechat_public, 'wechat_id'],
@@ -2604,7 +2628,7 @@ function buildProfileForm() {
     const visibility = selectInput(`profile-${key}-visibility-input`, [['public', '所有成员可见'], ['private', '仅自己可见']], isPublic ? 'public' : 'private')
     visibility.setAttribute('aria-label', `${label}可见范围`)
     const row = element('div', 'profile-contact-row profile-contact-edit-row')
-    row.append(makeContactIcon(icon), element('span', 'profile-contact-label', label), input, visibility)
+    row.append(makeContactIcon(icon as ContactIcon), element('span', 'profile-contact-label', label), input, visibility)
     contacts.append(row)
   }
   contacts.append(element('p', 'profile-note', '公开邮箱是你主动填写的联系邮箱，不会自动使用登录邮箱。'))
@@ -2614,7 +2638,7 @@ function buildProfileForm() {
   cancel.type = 'button'
   cancel.addEventListener('click', () => {
     profileViewState = cancelProfileEdit(profileViewState)
-    document.querySelector('#panel-me').classList.remove('profile-discussions-active')
+    query('#panel-me').classList.remove('profile-discussions-active')
     renderProfilePanel()
   })
   const save = element('button', 'primary-button', '保存资料')
@@ -2642,11 +2666,11 @@ function buildProfileForm() {
       tagline: tagline.value,
       bio: bio.value,
       linkedin_url: linkedin.value,
-      linkedin_public: form.querySelector('#profile-linkedin_url-visibility-input').value === 'public',
+      linkedin_public: form.querySelector<HTMLSelectElement>('#profile-linkedin_url-visibility-input')!.value === 'public',
       contact_email: email.value,
-      email_public: form.querySelector('#profile-contact_email-visibility-input').value === 'public',
+      email_public: form.querySelector<HTMLSelectElement>('#profile-contact_email-visibility-input')!.value === 'public',
       wechat_id: wechat.value,
-      wechat_public: form.querySelector('#profile-wechat_id-visibility-input').value === 'public',
+      wechat_public: form.querySelector<HTMLSelectElement>('#profile-wechat_id-visibility-input')!.value === 'public',
       role: role.value,
       cohort_id: cohort.value,
       graduation_year: year.value,
@@ -2670,7 +2694,7 @@ function buildProfileForm() {
 }
 
 function renderProfilePanel() {
-  const root = document.querySelector('#profile-panel')
+  const root = query('#profile-panel')
   root.replaceChildren()
   if (profileError) {
     const error = element('div', 'panel-placeholder')
@@ -2678,9 +2702,9 @@ function renderProfilePanel() {
     root.append(error)
   } else if (ownProfile) {
     const tabState = profileTabVisibility(profileViewState)
-    document.querySelector('#panel-me').classList.toggle('profile-discussions-active', tabState.showDiscussions)
-    document.querySelector('#panel-me').classList.toggle('profile-profile-active', tabState.showProfile)
-    document.querySelector('#panel-me').classList.toggle('profile-previewing', profileViewState.previewing)
+    query('#panel-me').classList.toggle('profile-discussions-active', tabState.showDiscussions)
+    query('#panel-me').classList.toggle('profile-profile-active', tabState.showProfile)
+    query('#panel-me').classList.toggle('profile-previewing', profileViewState.previewing)
     if (profileViewState.previewing) {
       root.append(buildProfileView(profileForPresentation(ownProfile, profileViewState), true))
     } else if (profileViewState.editing) {
@@ -2691,7 +2715,7 @@ function renderProfilePanel() {
   }
 }
 
-async function cropAvatarFile(file) {
+async function cropAvatarFile(file: File) {
   if (!file || !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
     throw new Error('头像只支持 JPG、PNG 或 WebP。')
   }
@@ -2702,7 +2726,7 @@ async function cropAvatarFile(file) {
   const canvas = document.createElement('canvas')
   canvas.width = 256
   canvas.height = 256
-  canvas.getContext('2d').drawImage(
+  canvas.getContext('2d')!.drawImage(
     bitmap,
     Math.floor((bitmap.width - side) / 2),
     Math.floor((bitmap.height - side) / 2),
@@ -2714,13 +2738,13 @@ async function cropAvatarFile(file) {
     256,
   )
   bitmap.close?.()
-  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', 0.86))
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/webp', 0.86))
   if (!blob) throw new Error('这个浏览器没法把图片转成 WebP。')
   if (blob.size > 1024 * 1024) throw new Error('裁剪后的头像仍然太大，请换一张。')
   return blob
 }
 
-async function profileChanged(profile, message) {
+async function profileChanged(profile: Profile, message: string) {
   ownProfile = profile
   updatePostIdentity()
   await loadPosts({ quiet: true })
@@ -2728,15 +2752,15 @@ async function profileChanged(profile, message) {
 }
 
 // Patch the avatar in place so unsaved text in the form survives the upload.
-async function avatarChanged(profile, message) {
-  document.querySelector('#profile-avatar-host')
+async function avatarChanged(profile: Profile, message: string) {
+  query('#profile-avatar-host')
     ?.replaceChildren(makeAvatar(profile.display_name, profile.avatar_url))
-  const clear = document.querySelector('#clear-avatar-button')
+  const clear = query('#clear-avatar-button')
   if (clear) clear.hidden = !isUploadedAvatar(profile.avatar_url)
   await profileChanged(profile, message)
 }
 
-async function changeAvatar(file) {
+async function changeAvatar(file: File) {
   try {
     const blob = await cropAvatarFile(file)
     await avatarChanged(await backend.uploadAvatar(blob), '头像已更新。实名内容会一起换上。')
@@ -2753,9 +2777,9 @@ async function resetAvatar() {
   }
 }
 
-async function showProfile(publicId) {
-  const dialog = document.querySelector('#profile-dialog')
-  const card = document.querySelector('#profile-card')
+async function showProfile(publicId: string) {
+  const dialog = query<HTMLDialogElement>('#profile-dialog')
+  const card = query('#profile-card')
   card.replaceChildren(element('p', 'profile-empty', '正在加载…'))
   if (!dialog.open) dialog.showModal()
   try {
@@ -2787,7 +2811,7 @@ async function showProfile(publicId) {
   }
 }
 
-document.querySelector('#profile-dialog-close').addEventListener('click', () => {
-  document.querySelector('#profile-dialog').close()
+query('#profile-dialog-close').addEventListener('click', () => {
+  query<HTMLDialogElement>('#profile-dialog').close()
 })
 

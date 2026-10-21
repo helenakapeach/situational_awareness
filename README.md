@@ -84,6 +84,8 @@ There's no bulk/random generator built in — each code is a literal string you 
 
 ## Verification
 
+Use Node.js 24 or newer. The test runner executes TypeScript files with Node's built-in type stripping, and the production build runs the strict TypeScript check before Vite.
+
 ```bash
 npm test
 npm run build

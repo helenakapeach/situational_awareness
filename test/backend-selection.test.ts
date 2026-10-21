@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { resolveBackendMode } from '../src/backend.js'
+import { resolveBackendMode } from '../src/backend.ts'
 
 test('API configuration alone never changes the default Supabase backend', () => {
   assert.equal(resolveBackendMode({ search: '', apiBaseUrl: 'https://sandbox-api.example' }), 'supabase')

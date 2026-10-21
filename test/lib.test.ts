@@ -34,8 +34,14 @@ import {
   validateReply,
   validLinkedInUrl,
   withVoteState,
-} from '../src/lib.js'
-import { renderMarkdown, safeHref } from '../src/markdown.js'
+} from '../src/lib.ts'
+
+function validProfile(input: Parameters<typeof validateProfile>[0]) {
+  const result = validateProfile(input)
+  if (!result.ok) throw new Error(result.message)
+  return result.value
+}
+import { renderMarkdown, safeHref } from '../src/markdown.ts'
 
 test('post validation trims valid content and rejects missing fields', () => {
   assert.deepEqual(validatePost('  一个问题  ', '  一些背景  '), {
@@ -109,25 +115,25 @@ test('profile validation accepts a complete card and rejects bad contact details
   })
   assert.equal(validateProfile({ display_name: '好', role: 'student', graduation_year: 2015 }).ok, false)
   assert.equal(validateProfile({ display_name: '好', role: 'student', graduation_year: 2028 }).ok, false)
-  assert.equal(validateProfile({ display_name: '好', role: 'student', graduation_year: 2016 }).value.graduation_year, 2016)
-  assert.equal(validateProfile({ display_name: '好', role: 'committee', graduation_year: 2016, cohort_id: 1 }).value.graduation_year, null)
-  assert.equal(validateProfile({ display_name: '好', role: 'mentor', graduation_year: 2020 }).value.graduation_year, null)
-  assert.equal(validateProfile({ display_name: '好', role: 'committee', cohort_id: 1 }).value.cohort_id, null)
+  assert.equal(validProfile({ display_name: '好', role: 'student', graduation_year: 2016 }).graduation_year, 2016)
+  assert.equal(validProfile({ display_name: '好', role: 'committee', graduation_year: 2016, cohort_id: 1 }).graduation_year, null)
+  assert.equal(validProfile({ display_name: '好', role: 'mentor', graduation_year: 2020 }).graduation_year, null)
+  assert.equal(validProfile({ display_name: '好', role: 'committee', cohort_id: 1 }).cohort_id, null)
   assert.equal(validateProfile({ display_name: '' }).ok, false)
   assert.equal(validateProfile({ display_name: '好', linkedin_url: 'https://evil.example/in/lin' }).ok, false)
   assert.equal(validateProfile({ display_name: '好', linkedin_url: 'www.evil.example/in/lin' }).ok, false)
   assert.equal(
-    validateProfile({ display_name: '好', linkedin_url: ' www.linkedin.com/in/example-lin ' }).value.linkedin_url,
+    validProfile({ display_name: '好', linkedin_url: ' www.linkedin.com/in/example-lin ' }).linkedin_url,
     'https://www.linkedin.com/in/example-lin',
   )
   assert.equal(
-    validateProfile({ display_name: '好', linkedin_url: 'http://linkedin.com/in/example-lin' }).value.linkedin_url,
+    validProfile({ display_name: '好', linkedin_url: 'http://linkedin.com/in/example-lin' }).linkedin_url,
     'https://linkedin.com/in/example-lin',
   )
   assert.equal(validateProfile({ display_name: '好', contact_email: 'not-an-email' }).ok, false)
   assert.equal(validateProfile({ display_name: '好', wechat_id: '12bad' }).ok, false)
   assert.equal(validateProfile({ display_name: '好', role: 'staff' }).ok, false)
-  assert.equal(validateProfile({ display_name: '好', role: 'mentor', cohort_id: 4 }).value.cohort_id, null)
+  assert.equal(validProfile({ display_name: '好', role: 'mentor', cohort_id: 4 }).cohort_id, null)
 })
 
 test('LinkedIn display input becomes a usable URL in unsaved profile previews', () => {
@@ -275,7 +281,7 @@ test('the op badge requires the same author and the same anonymity', () => {
 })
 
 test('late night runs from 23:00 to before 05:00 local time', () => {
-  const at = (hour) => new Date(2026, 9, 13, hour, 30)
+  const at = (hour: number) => new Date(2026, 9, 13, hour, 30)
   assert.equal(isLateNight(at(22)), false)
   assert.equal(isLateNight(at(23)), true)
   assert.equal(isLateNight(at(0)), true)

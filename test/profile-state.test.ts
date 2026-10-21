@@ -11,7 +11,7 @@ import {
   selectProfileTab,
   startProfileEdit,
   visibleProfileContacts,
-} from '../src/profile-state.js'
+} from '../src/profile-state.ts'
 
 const savedProfile = {
   display_name: 'Lin Ran',
@@ -34,7 +34,7 @@ test('member preview shows the current draft and returning to edit retains it', 
 
   state = exitProfilePreview(state)
   assert.equal(state.editing, true)
-  assert.equal(state.draft.display_name, 'Draft name')
+  assert.equal(state.draft?.display_name, 'Draft name')
   assert.equal(profileForPresentation(savedProfile, state).display_name, 'Draft name')
 })
 

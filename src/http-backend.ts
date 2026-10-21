@@ -1,15 +1,34 @@
-import { postIdFromSearch, postUrl } from './lib.js'
+import { postIdFromSearch, postUrl } from './lib.ts'
+import type { AppSession, Backend, Cohort, Member, Post, PostSummary, Profile, ProfileCard, Reply, ReplySummary } from './types.ts'
+
+interface SessionExchangeResponse {
+  accessToken: string
+  tokenType?: string
+  expiresIn?: number
+  user?: { id?: string; email?: string | null; user_metadata?: AppSession['user']['user_metadata'] }
+}
+interface AuthPort {
+  getSession(): Promise<{ data: { session: AppSession | null }; error: Error | null }>
+  onAuthStateChange(callback: (event: string, session: AppSession | null) => void): { data: { subscription: { unsubscribe(): void } } }
+  signInWithOAuth(options: { provider: 'google'; options: { redirectTo: string } }): Promise<{ error: Error | null }>
+  signOut(): Promise<{ error: Error | null }>
+}
+export interface HttpRequestInit {
+  method: string
+  headers: Headers
+  body?: string | Blob
+}
 
 /** HTTP adapter for FastAPI. Supabase is used only for Google OAuth. */
-export function createHttpBackend({ baseUrl, auth, fetchImpl = fetch }) {
+export function createHttpBackend({ baseUrl, auth, fetchImpl = fetch as (url: string, init: HttpRequestInit) => Promise<Response> }: { baseUrl: string; auth: AuthPort; fetchImpl?: (url: string, init: HttpRequestInit) => Promise<Response> }): Backend {
   const apiBase = String(baseUrl || '').replace(/\/+$/, '')
-  let appSession = null
-  let exchangedSupabaseToken = null
-  let exchangePromise = null
+  let appSession: AppSession | null = null
+  let exchangedSupabaseToken: string | null = null
+  let exchangePromise: { token: string; generation: number; promise: Promise<AppSession | null> } | null = null
   let appTokenExpiresAt = 0
   let authGeneration = 0
 
-  async function exchange(session, generation = authGeneration) {
+  async function exchange(session: AppSession | null, generation = authGeneration) {
     if (generation !== authGeneration) return null
     const accessToken = session?.access_token
     if (!accessToken) {
@@ -28,10 +47,10 @@ export function createHttpBackend({ baseUrl, auth, fetchImpl = fetch }) {
     const promise = (async () => {
       const response = await fetchImpl(`${apiBase}/api/auth/session`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: new Headers({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ access_token: accessToken, provider: 'supabase' }),
       })
-      const result = await readResponse(response)
+      const result = await readResponse(response) as SessionExchangeResponse
       if (!result?.accessToken) throw new Error('API session response is missing accessToken')
       const nextSession = {
         ...session,
@@ -74,7 +93,7 @@ export function createHttpBackend({ baseUrl, auth, fetchImpl = fetch }) {
     return exchange(data.session, generation)
   }
 
-  async function request(path, { method = 'GET', body, headers = {} } = {}) {
+  async function request<T>(path: string, { method = 'GET', body, headers = {} }: { method?: string; body?: unknown; headers?: HeadersInit } = {}): Promise<T> {
     const session = await currentSession()
     if (!session?.app_access_token) throw new Error('Sign in is required to use the API.')
     const requestHeaders = new Headers(headers)
@@ -88,7 +107,7 @@ export function createHttpBackend({ baseUrl, auth, fetchImpl = fetch }) {
       headers: requestHeaders,
       ...(body === undefined ? {} : { body: body instanceof Blob ? body : JSON.stringify(body) }),
     })
-    return readResponse(response)
+    return await readResponse(response) as T
   }
 
   return {
@@ -136,31 +155,30 @@ export function createHttpBackend({ baseUrl, auth, fetchImpl = fetch }) {
       exchangedSupabaseToken = null
       appTokenExpiresAt = 0
     },
-    async memberAccess() { return (await request('/api/member-access')) || { is_member: false, is_admin: false, is_disabled: false } },
-    async adminMembers() { return request('/api/admin/members') },
+    async memberAccess() { return (await request<{ is_member: boolean; is_admin: boolean; is_disabled: boolean }>('/api/member-access')) || { is_member: false, is_admin: false, is_disabled: false } },
+    async adminMembers() { return request<Member[]>('/api/admin/members') },
     async adminSetDisabled(userId, disabled) { await request(`/api/admin/members/${id(userId)}`, { method: 'PATCH', body: { is_disabled: disabled } }) },
     async adminDeleteContent(contentId, kind) { await request(`/api/admin/content/${id(kind)}/${id(contentId)}`, { method: 'DELETE' }) },
     async adminSetRoleVerified(userId, verified) { await request(`/api/admin/members/${id(userId)}/role-verification`, { method: 'PUT', body: { verified } }) },
-    async getOwnProfile() { return request('/api/profile') },
-    async getProfile(publicId) { return request(`/api/profiles/${id(publicId)}`) },
-    async listCohorts() { return (await request('/api/cohorts')) || [] },
-    async updateOwnProfile(profile) { return request('/api/profile', { method: 'PUT', body: profile }) },
-    async uploadAvatar(blob) { return request('/api/profile/avatar', { method: 'POST', body: blob, headers: { 'Content-Type': 'image/webp' } }) },
-    async clearAvatar() { return request('/api/profile/avatar', { method: 'DELETE' }) },
-    async isMember() { return Boolean((await request('/api/member-access'))?.is_member) },
+    async getOwnProfile() { return request<Profile | null>('/api/profile') },
+    async getProfile(publicId) { return request<ProfileCard | null>(`/api/profiles/${id(publicId)}`) },
+    async listCohorts() { return (await request<Cohort[]>('/api/cohorts')) || [] },
+    async updateOwnProfile(profile) { return request<Profile>('/api/profile', { method: 'PUT', body: profile }) },
+    async uploadAvatar(blob) { return request<Profile>('/api/profile/avatar', { method: 'POST', body: blob, headers: { 'Content-Type': 'image/webp' } }) },
+    async clearAvatar() { return request<Profile>('/api/profile/avatar', { method: 'DELETE' }) },
+    async isMember() { return Boolean((await request<{ is_member: boolean }>('/api/member-access'))?.is_member) },
     async redeemInviteCode(code) { return Boolean(await request('/api/invite-redemptions', { method: 'POST', body: { code } })) },
     async listPosts({ before = null, before_id = null } = {}) {
       const query = new URLSearchParams()
       if (before) query.set('before', before)
       if (before_id != null) query.set('before_id', String(before_id))
-      return (await request(`/api/posts${query.size ? `?${query}` : ''}`)) || []
+      return (await request<Post[]>(`/api/posts${query.size ? `?${query}` : ''}`)) || []
     },
-    async getPost(postId) { return request(`/api/posts/${id(postId)}`) },
     async searchPosts(term) {
       const query = new URLSearchParams({ q: String(term ?? '') })
-      return (await request(`/api/posts/search?${query}`)) || []
+      return (await request<Post[]>(`/api/posts/search?${query}`)) || []
     },
-    async listMine() { return (await request('/api/me/content')) || { posts: [], replies: [] } },
+    async listMine() { return (await request<{ posts: PostSummary[]; replies: ReplySummary[] }>('/api/me/content')) || { posts: [], replies: [] } },
     async createPost(post) { await request('/api/posts', { method: 'POST', body: post }) },
     async updatePost(postId, post) { await request(`/api/posts/${id(postId)}`, { method: 'PATCH', body: post }) },
     async deletePost(postId) { await request(`/api/posts/${id(postId)}`, { method: 'DELETE' }) },
@@ -169,14 +187,14 @@ export function createHttpBackend({ baseUrl, auth, fetchImpl = fetch }) {
     async deleteReply(replyId) { await request(`/api/replies/${id(replyId)}`, { method: 'DELETE' }) },
     async togglePostVote(postId) { await request(`/api/posts/${id(postId)}/vote`, { method: 'POST' }) },
     async toggleReplyVote(replyId) { await request(`/api/replies/${id(replyId)}/vote`, { method: 'POST' }) },
-    async listLiked() { return (await request('/api/likes')) || { posts: [], replies: [] } },
+    async listLiked() { return (await request<{ posts: PostSummary[]; replies: ReplySummary[] }>('/api/likes')) || { posts: [], replies: [] } },
     async createFeedback(feedback) { await request('/api/feedback', { method: 'POST', body: feedback }) },
   }
 }
 
-function id(value) { return encodeURIComponent(String(value)) }
+function id(value: string | number) { return encodeURIComponent(String(value)) }
 
-async function readResponse(response) {
+async function readResponse(response: Response): Promise<unknown> {
   if (response.status === 204) return null
   const text = await response.text()
   let payload = null

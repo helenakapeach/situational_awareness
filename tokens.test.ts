@@ -14,18 +14,18 @@ const AA_UI = 3.0; // 图标、边框等非文字信息
 
 /* ---------- 对比度 ---------- */
 
-const channel = (c) => {
+const channel = (c: number) => {
   const v = c / 255;
   return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
 };
 
-const luminance = (hex) => {
+const luminance = (hex: string) => {
   const h = hex.replace("#", "");
   const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
   return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
 };
 
-const contrast = (a, b) => {
+const contrast = (a: string, b: string) => {
   const [x, y] = [luminance(a), luminance(b)];
   const [hi, lo] = x > y ? [x, y] : [y, x];
   return (hi + 0.05) / (lo + 0.05);
@@ -34,13 +34,13 @@ const contrast = (a, b) => {
 /* ---------- 解析 design-tokens.css ---------- */
 
 /** 抽出一个选择器块里的令牌。深色块取第一个 [data-theme="dark"]。 */
-function extractBlock(css, selector) {
+function extractBlock(css: string, selector: string): Record<string, string> {
   const start = css.indexOf(selector);
   if (start === -1) throw new Error(`找不到选择器：${selector}`);
   const open = css.indexOf("{", start);
   const close = css.indexOf("}", open);
   const body = css.slice(open + 1, close);
-  const tokens = {};
+  const tokens: Record<string, string> = {};
   for (const [, name, value] of body.matchAll(/--([\w-]+)\s*:\s*(#[0-9A-Fa-f]{6})\s*;/g)) {
     tokens[name] = value.toUpperCase();
   }
@@ -51,7 +51,7 @@ function extractBlock(css, selector) {
    每一条都对应色板注释里写明的使用规则。
    如果某个组合不在这张表里，就是不允许出现在界面上的。 */
 
-const TEXT_ON = {
+const TEXT_ON: Record<string, string[]> = {
   text: ["bg", "surface", "surface-sunken", "insight-tint"],
   "text-soft": ["bg", "surface", "surface-sunken"],
   "text-faint": ["bg", "surface", "surface-sunken"],
@@ -66,14 +66,14 @@ const TEXT_ON = {
 };
 
 /** 非文字：图标与有信息含义的边框。--insight 允许做图标，但不允许做文字。 */
-const UI_ON = {
+const UI_ON: Record<string, string[]> = {
   insight: ["bg", "surface"],
 };
 
 /* ---------- 执行 ---------- */
 
 const css = await readFile(new URL("./design-tokens.css", import.meta.url), "utf8");
-const modes = {
+const modes: Record<string, Record<string, string>> = {
   浅色: extractBlock(css, ":root {"),
   深色: extractBlock(css, ':root[data-theme="dark"]'),
 };
@@ -87,7 +87,7 @@ for (const [modeName, tokens] of Object.entries(modes)) {
   for (const [table, threshold] of [
     [TEXT_ON, AA_TEXT],
     [UI_ON, AA_UI],
-  ]) {
+  ] as Array<[Record<string, string[]>, number]>) {
     for (const [fg, backgrounds] of Object.entries(table)) {
       for (const bg of backgrounds) {
         if (!tokens[fg]) throw new Error(`${modeName} 缺少令牌 --${fg}`);
