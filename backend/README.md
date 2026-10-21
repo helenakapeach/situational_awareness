@@ -162,6 +162,6 @@ PROJECT_ID=project-d65805f6-4709-4498-9df \
 
 `backend/.env` 已从 Git、Docker 和 GCloud source uploader 排除。凭据会直接上传至 Secret Manager，不会写入镜像。Cloud Run IAM 允许公开调用 API，以便 Google 登录和 token 交换可达；受保护业务路由仍要求应用 JWT 和 Mongo 成员检查。
 
-现有 GitHub Pages workflow 未更改。`?backend=mongo` 默认访问 `https://linghang-main-app-711094273715.us-east1.run.app`，生产前端构建不需要新增变量。该 Cloud Run 服务是本项目独立的 Mongo 沙箱。部署不会让普通访客离开 Supabase。部署脚本会在云端变更前检查沙箱配置，最大实例数固定为 1，并在启动导入后等待 `/health` 就绪。每次冷启动、重启和本地 reload 都会重建沙箱。
+现有 GitHub Pages workflow 未更改。`?backend=mongo` 默认访问 `https://linghang-main-app-6p5bfe4xaa-ue.a.run.app`，生产前端构建不需要新增变量。该 Cloud Run 服务是本项目独立的 Mongo 沙箱。部署不会让普通访客离开 Supabase。部署脚本会在云端变更前检查沙箱配置，最大实例数固定为 1，并在启动导入后等待 `/health` 就绪。每次冷启动、重启和本地 reload 都会重建沙箱。
 
 迁移和启动重建细节见 [MIGRATION.md](./MIGRATION.md) 与 [ROLLOUT.md](./ROLLOUT.md)。后端完整验证使用 `$backend-tests` 技能或对应的 `scripts/run.sh`；现有 Pages workflow 继续负责 `npm test`。

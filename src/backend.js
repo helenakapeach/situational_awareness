@@ -7,7 +7,7 @@ const DEMO_SESSION_KEY = 'situational-awareness-demo-session'
 const DEMO_MEMBER_KEY = 'situational-awareness-demo-member'
 const DEMO_INVITE_CODE = 'DEMO2026'
 const DEMO_PROFILE_KEY = 'situational-awareness-demo-profile'
-const SANDBOX_API_BASE_URL = 'https://linghang-main-app-711094273715.us-east1.run.app'
+const SANDBOX_API_BASE_URL = 'https://linghang-main-app-6p5bfe4xaa-ue.a.run.app'
 const POST_COLUMNS = 'id,author_name,author_avatar_url,author_public_id,author_role,author_cohort_name,author_role_verified,is_anonymous,title,body,created_at,updated_at,upvote_count,post_votes(post_id)'
 
 const DEMO_COHORTS = [
