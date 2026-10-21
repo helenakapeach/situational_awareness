@@ -1,0 +1,29 @@
+{
+  "actions": [
+    { "name": "memberAccess", "method": "GET", "path": "/api/member-access", "response": "object" },
+    { "name": "adminMembers", "method": "GET", "path": "/api/admin/members", "response": "array" },
+    { "name": "adminSetDisabled", "method": "PATCH", "path": "/api/admin/members/{user_id}", "response": "void" },
+    { "name": "adminDeleteContent", "method": "DELETE", "path": "/api/admin/content/{kind}/{content_id}", "response": "void" },
+    { "name": "adminSetRoleVerified", "method": "PUT", "path": "/api/admin/members/{user_id}/role-verification", "response": "void" },
+    { "name": "getOwnProfile", "method": "GET", "path": "/api/profile", "response": "object" },
+    { "name": "getProfile", "method": "GET", "path": "/api/profiles/{public_id}", "response": "object_or_null" },
+    { "name": "listCohorts", "method": "GET", "path": "/api/cohorts", "response": "array" },
+    { "name": "updateOwnProfile", "method": "PUT", "path": "/api/profile", "response": "object" },
+    { "name": "uploadAvatar", "method": "POST", "path": "/api/profile/avatar", "response": "object" },
+    { "name": "clearAvatar", "method": "DELETE", "path": "/api/profile/avatar", "response": "object" },
+    { "name": "redeemInviteCode", "method": "POST", "path": "/api/invite-redemptions", "response": "boolean" },
+    { "name": "listPosts", "method": "GET", "path": "/api/posts?before={before}&before_id={before_id}", "response": "post_page" },
+    { "name": "searchPosts", "method": "GET", "path": "/api/posts/search?q={query}", "response": "post_page" },
+    { "name": "listMine", "method": "GET", "path": "/api/me/content", "response": "own_content" },
+    { "name": "listLiked", "method": "GET", "path": "/api/likes", "response": "likes" },
+    { "name": "createPost", "method": "POST", "path": "/api/posts", "response": "void" },
+    { "name": "updatePost", "method": "PATCH", "path": "/api/posts/{post_id}", "response": "void" },
+    { "name": "deletePost", "method": "DELETE", "path": "/api/posts/{post_id}", "response": "void" },
+    { "name": "createReply", "method": "POST", "path": "/api/posts/{post_id}/replies", "response": "void" },
+    { "name": "updateReply", "method": "PATCH", "path": "/api/replies/{reply_id}", "response": "void" },
+    { "name": "deleteReply", "method": "DELETE", "path": "/api/replies/{reply_id}", "response": "void" },
+    { "name": "createFeedback", "method": "POST", "path": "/api/feedback", "response": "void" },
+    { "name": "toggleReplyVote", "method": "POST", "path": "/api/replies/{reply_id}/vote", "response": "void" },
+    { "name": "togglePostVote", "method": "POST", "path": "/api/posts/{post_id}/vote", "response": "void" }
+  ]
+}

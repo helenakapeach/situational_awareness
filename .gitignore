@@ -8,3 +8,13 @@ node_modules/
 .tmp-screenshots/
 playwright-report/
 test-results/
+
+# Python API
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Private migration exports
+migration-dumps/

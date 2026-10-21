@@ -100,3 +100,7 @@ Hand this to whoever is shipping: **[DEPLOY.md](./DEPLOY.md)** (Chinese). Ordere
 Pages builds from `main` via `.github/workflows/deploy-pages.yml`. It does **not** run SQL. If `supabase/migrations/` gained a file, run `npx supabase@2.117.0 db push` **before** (or immediately as) you push `main`. Reverse that and the feed can fail until the database catches up.
 
 Production URL: https://helenakapeach.github.io/situational_awareness/. If `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` are missing from the repo's Actions **Variables**, the live site stays in browser-only demo mode.
+
+## Python / MongoDB 后端
+
+并行的 uv + FastAPI + Pydantic + MongoDB 测试环境位于 [`backend/`](./backend/README.md)。普通访问始终使用 Supabase；只有 `?backend=mongo` 会选择沙箱 API。每次 API 启动都会用只读 Supabase 快照重建临时 Mongo 数据。沙箱操作只写入 Mongo；生产数据和 Google Auth 仍由 Supabase 管理。现有 Pages 部署 workflow 保持不变。环境配置和发布流程见 backend README。
