@@ -13,6 +13,7 @@ from conftest import mongo_settings
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from pymongo import MongoClient
+from pymongo.errors import OperationFailure
 from pymongo.uri_parser import parse_uri
 from test_migration import make_bundle
 from test_supabase_dump import source_database as source_database_fixture  # noqa: F401
@@ -25,11 +26,20 @@ SANDBOX_URI_ENV = "TEST_SANDBOX_MONGODB_URI"
 TEST_DATABASE = "linghang_main_app"
 CONTROL_DATABASE = f"{TEST_DATABASE}_control"
 LOCAL_MONGO_HOSTS = {"localhost", "127.0.0.1", "::1", "mongo", "mongodb"}
-GENERATION_DATABASE = re.compile(rf"{re.escape(TEST_DATABASE)}_[0-9a-f]{{32}}\Z")
+GENERATION_DATABASE = re.compile(rf"{re.escape(TEST_DATABASE)}_(?:[0-9a-f]{{16}}|[0-9a-f]{{32}})\Z")
 
 
 def _generation_databases(client):
     return [name for name in client.list_database_names() if GENERATION_DATABASE.fullmatch(name)]
+
+
+def test_generation_database_name_fits_atlas_free_limit():
+    generation = "a" * 32
+    name = sandbox.sandbox_database_name(TEST_DATABASE, generation)
+    assert len(name.encode("utf-8")) <= 38
+    assert sandbox._is_generation_database(name, TEST_DATABASE)
+    assert sandbox._is_generation_database(f"{TEST_DATABASE}_{generation}", TEST_DATABASE)
+    assert not sandbox._is_generation_database(name, "another_app")
 
 
 @pytest.fixture
@@ -93,7 +103,8 @@ def test_reset_publishes_fresh_database_and_removes_retired_generation(sandbox_d
     source, *_ = make_bundle(tmp_path / "source")
     _mock_export(monkeypatch, source)
     previous_generation = "a" * 32
-    previous_name = sandbox.sandbox_database_name(TEST_DATABASE, previous_generation)
+    # Existing databases with the old full-UUID suffix can still be retired.
+    previous_name = f"{TEST_DATABASE}_{previous_generation}"
     previous_db = sandbox_db.client[previous_name]
     previous_db["leftover_unmanaged_collection"].insert_one({"value": "old deployment data"})
     sandbox_db.client[CONTROL_DATABASE].startup.insert_one(
@@ -105,6 +116,7 @@ def test_reset_publishes_fresh_database_and_removes_retired_generation(sandbox_d
         }
     )
 
+    assert sandbox.sandbox_ready(previous_db, previous_generation)
     generation = sandbox.reset_sandbox(sandbox_db, _settings())
     generation_db = sandbox_db.client[sandbox.sandbox_database_name(TEST_DATABASE, generation)]
 
@@ -117,6 +129,51 @@ def test_reset_publishes_fresh_database_and_removes_retired_generation(sandbox_d
     assert state["owner"] == generation
     assert state["status"] == "ready"
     assert state["active_database"] == generation_db.name
+
+
+def test_generation_collision_does_not_delete_or_overwrite_existing_data(sandbox_db, tmp_path, monkeypatch):
+    source, *_ = make_bundle(tmp_path / "source")
+    _mock_export(monkeypatch, source)
+    original_lease = sandbox._ResetLease
+
+    def fixed_lease(db):
+        lease = original_lease(db)
+        lease.owner = "a" * 32
+        return lease
+
+    monkeypatch.setattr(sandbox, "_ResetLease", fixed_lease)
+    existing = sandbox_db.client[sandbox.sandbox_database_name(TEST_DATABASE, "a" * 32)]
+    existing.marker.insert_one({"_id": "untouched"})
+    with pytest.raises(RuntimeError, match="stage=prepare_target"):
+        sandbox.reset_sandbox(sandbox_db, _settings())
+    assert existing.marker.find_one({"_id": "untouched"})
+    assert existing.users.count_documents({}) == 0
+
+
+def test_import_failure_reports_stage_and_code_without_private_driver_message(
+    sandbox_db, tmp_path, monkeypatch, caplog
+):
+    source, *_ = make_bundle(tmp_path / "source")
+    _mock_export(monkeypatch, source)
+
+    def failed_import(*args, **kwargs):
+        raise OperationFailure(
+            "mongodb://private-user:private-password@private-host/private-data",
+            code=8000,
+            details={
+                "errmsg": "Database name private-data is too long. Max database name length is 38 bytes."
+            },
+        )
+
+    monkeypatch.setattr(sandbox, "import_bundle", failed_import)
+    with pytest.raises(RuntimeError) as error:
+        sandbox.reset_sandbox(sandbox_db, _settings())
+    output = str(error.value) + caplog.text
+    assert "stage=import_snapshot" in output
+    assert "mongo_code=8000" in output
+    assert "reason=database_name_too_long" in output
+    assert "private-password" not in output
+    assert "private-data" not in output
 
 
 def test_repeated_reset_discards_sandbox_writes_and_uses_latest_snapshot(sandbox_db, tmp_path, monkeypatch):

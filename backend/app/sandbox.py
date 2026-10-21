@@ -8,12 +8,13 @@ from tempfile import TemporaryDirectory
 from threading import Event, Thread
 from uuid import uuid4
 
-from pymongo.errors import DuplicateKeyError, PyMongoError
+from pymongo.errors import DuplicateKeyError, OperationFailure, PyMongoError
 
 from .migration import import_bundle, load_bundle
 from .supabase_dump import export_from_postgres
 
 LEASE_SECONDS = 90
+GENERATION_SUFFIX_LENGTH = 16
 logger = logging.getLogger(__name__)
 
 
@@ -25,11 +26,16 @@ def _state(db, database_name=None):
 def sandbox_database_name(database_name: str, generation: str) -> str:
     if not re.fullmatch(r"[0-9a-f]{32}", generation):
         raise ValueError("Invalid sandbox generation")
-    return f"{database_name}_{generation}"
+    # Keep the full UUID for lease fencing; a shorter suffix fits Atlas Free's 38-byte database limit.
+    return f"{database_name}_{generation[:GENERATION_SUFFIX_LENGTH]}"
 
 
 def _is_generation_database(name, database_name):
-    return isinstance(name, str) and bool(re.fullmatch(rf"{re.escape(database_name)}_[0-9a-f]{{32}}", name))
+    return isinstance(name, str) and bool(
+        re.fullmatch(
+            rf"{re.escape(database_name)}_(?:[0-9a-f]{{{GENERATION_SUFFIX_LENGTH}}}|[0-9a-f]{{32}})", name
+        )
+    )
 
 
 def active_sandbox_database(client, settings):
@@ -46,7 +52,10 @@ def active_sandbox_database(client, settings):
 def sandbox_ready(db, generation: str) -> bool:
     """Retire old instances as soon as another process starts rebuilding the sandbox."""
     try:
-        database_name = db.name.removesuffix(f"_{generation}")
+        # Accept both current short suffixes and databases created by the previous version.
+        database_name = db.name.removesuffix(f"_{generation}").removesuffix(
+            f"_{generation[:GENERATION_SUFFIX_LENGTH]}"
+        )
         return bool(
             _state(db, database_name).find_one({"_id": "startup", "owner": generation, "status": "ready"})
         )
@@ -148,8 +157,10 @@ def reset_sandbox(db, settings) -> str:
         raise RuntimeError("SUPABASE_DB_URL is required to rebuild the Mongo sandbox at startup")
     target = None
     published = False
+    stage = "acquire_lease"
     try:
         with _ResetLease(db) as lease, TemporaryDirectory(prefix="sa-sandbox-") as folder:
+            stage = "export_snapshot"
             logger.info("Exporting read-only Supabase snapshot for Mongo sandbox startup")
             snapshot = Path(folder) / "snapshot"
             export_from_postgres(
@@ -158,15 +169,19 @@ def reset_sandbox(db, settings) -> str:
                 supabase_url=settings.supabase_url,
                 storage_key=settings.supabase_service_role_key.get_secret_value(),
             )
+            stage = "validate_snapshot"
             bundle = load_bundle(snapshot)
             lease.check()
+            stage = "prepare_target"
             candidate = sandbox_database_name(db.name, lease.owner)
             # Never reuse an existing physical database, even on an improbable UUID collision.
             if candidate in db.client.list_database_names():
                 raise RuntimeError("Sandbox generation already exists")
             target = candidate
+            stage = "import_snapshot"
             logger.info("Snapshot validated; importing a fresh disposable Mongo sandbox")
             import_bundle(db.client[target], bundle, apply=True)
+            stage = "publish_snapshot"
             previous = lease.ready(bundle.manifest["snapshot_id"], target)
             published = True
             if _is_generation_database(previous, db.name) and previous != target:
@@ -183,8 +198,14 @@ def reset_sandbox(db, settings) -> str:
                 db.client.drop_database(target)
             except PyMongoError:
                 logger.warning("Incomplete sandbox cleanup failed")
-        # PostgreSQL/HTTP driver errors can contain credentials or private values.
-        logger.error("Mongo sandbox startup failed (%s); API will not serve", type(exc).__name__)
+        # Driver messages can contain credentials or private values; log only controlled labels and codes.
+        detail = f"{type(exc).__name__}, stage={stage}"
+        if isinstance(exc, OperationFailure):
+            detail += f", mongo_code={exc.code}"
+            message = str((exc.details or {}).get("errmsg", "")).lower()
+            if "database name" in message and "too long" in message:
+                detail += ", reason=database_name_too_long"
+        logger.error("Mongo sandbox startup failed (%s); API will not serve", detail)
         raise RuntimeError(
-            f"Mongo sandbox startup failed ({type(exc).__name__}); check source access and target connectivity"
+            f"Mongo sandbox startup failed ({detail}); check source access and target connectivity"
         ) from None
