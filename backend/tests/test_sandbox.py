@@ -1,11 +1,9 @@
 import hashlib
 import json
 import os
-import re
 import shutil
-import threading
-from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -23,57 +21,28 @@ from app.auth.service import create_app_session_token
 from app.config import Settings
 
 SANDBOX_URI_ENV = "TEST_SANDBOX_MONGODB_URI"
-TEST_DATABASE = "linghang_main_app"
-CONTROL_DATABASE = f"{TEST_DATABASE}_control"
 LOCAL_MONGO_HOSTS = {"localhost", "127.0.0.1", "::1", "mongo", "mongodb"}
-GENERATION_DATABASE = re.compile(rf"{re.escape(TEST_DATABASE)}_(?:[0-9a-f]{{16}}|[0-9a-f]{{32}})\Z")
-
-
-def _generation_databases(client):
-    return [name for name in client.list_database_names() if GENERATION_DATABASE.fullmatch(name)]
-
-
-def test_generation_database_name_fits_atlas_free_limit():
-    generation = "a" * 32
-    name = sandbox.sandbox_database_name(TEST_DATABASE, generation)
-    assert len(name.encode("utf-8")) <= 38
-    assert sandbox._is_generation_database(name, TEST_DATABASE)
-    assert sandbox._is_generation_database(f"{TEST_DATABASE}_{generation}", TEST_DATABASE)
-    assert not sandbox._is_generation_database(name, "another_app")
 
 
 @pytest.fixture
 def sandbox_db():
     uri = os.environ.get(SANDBOX_URI_ENV)
     if not uri:
-        pytest.skip(f"Set {SANDBOX_URI_ENV} to a disposable local replica set for sandbox integration tests")
-
-    # This fixture removes local test generations, so refuse any URI that
-    # points at Atlas or another non-local Mongo deployment.
+        pytest.skip(f"Set {SANDBOX_URI_ENV} to a disposable local replica set for startup reset tests")
     hosts = {host for host, _port in parse_uri(uri)["nodelist"]}
     if not hosts or not hosts <= LOCAL_MONGO_HOSTS:
         pytest.fail(f"{SANDBOX_URI_ENV} must point only to a local Mongo host")
-
     with MongoClient(uri, tz_aware=True, serverSelectionTimeoutMS=3000) as client:
-        try:
-            client.admin.command("ping")
-        except Exception as exc:
-            pytest.fail(f"{SANDBOX_URI_ENV} is configured but Mongo is unavailable: {type(exc).__name__}")
-        db = client[TEST_DATABASE]
-        for name in _generation_databases(client):
-            client.drop_database(name)
-        client[CONTROL_DATABASE].startup.delete_many({})
+        db = client[f"sa_reset_{uuid4().hex[:16]}"]
         try:
             yield db
         finally:
-            for name in _generation_databases(client):
-                client.drop_database(name)
-            client[CONTROL_DATABASE].startup.delete_many({})
+            client.drop_database(db.name)
 
 
-def _settings(database=TEST_DATABASE):
+def _settings(db):
     return SimpleNamespace(
-        mongodb_database=database,
+        mongodb_database=db.name,
         supabase_db_url=SecretStr("postgresql://readonly.example.test/db"),
         supabase_url="https://identity.example.test",
         supabase_service_role_key=SecretStr("test-storage-key"),
@@ -99,242 +68,81 @@ def _change_post_title(path, title):
     manifest_file.write_text(json.dumps(manifest))
 
 
-def test_reset_publishes_fresh_database_and_removes_retired_generation(sandbox_db, tmp_path, monkeypatch):
+def test_reset_overwrites_the_entire_target_database(sandbox_db, tmp_path, monkeypatch):
     source, *_ = make_bundle(tmp_path / "source")
     _mock_export(monkeypatch, source)
-    previous_generation = "a" * 32
-    # Existing databases with the old full-UUID suffix can still be retired.
-    previous_name = f"{TEST_DATABASE}_{previous_generation}"
-    previous_db = sandbox_db.client[previous_name]
-    previous_db["leftover_unmanaged_collection"].insert_one({"value": "old deployment data"})
-    sandbox_db.client[CONTROL_DATABASE].startup.insert_one(
-        {
-            "_id": "startup",
-            "owner": previous_generation,
-            "status": "ready",
-            "active_database": previous_name,
-        }
-    )
-
-    assert sandbox.sandbox_ready(previous_db, previous_generation)
-    generation = sandbox.reset_sandbox(sandbox_db, _settings())
-    generation_db = sandbox_db.client[sandbox.sandbox_database_name(TEST_DATABASE, generation)]
-
-    assert generation
-    assert generation_db.posts.find_one({"id": 12})["title"] == "Hello"
-    assert "leftover_unmanaged_collection" not in generation_db.list_collection_names()
-    assert previous_name not in sandbox_db.client.list_database_names()
-    assert sandbox.sandbox_ready(sandbox_db, generation)
-    state = sandbox_db.client[CONTROL_DATABASE].startup.find_one({"_id": "startup"})
-    assert state["owner"] == generation
-    assert state["status"] == "ready"
-    assert state["active_database"] == generation_db.name
+    sandbox_db.users.insert_one({"id": "stale-user"})
+    sandbox_db.unmanaged_collection.insert_one({"_id": "old deployment data"})
+    result = sandbox.reset_sandbox(sandbox_db, _settings(sandbox_db))
+    assert result["ok"] and result["applied"]
+    assert sandbox_db.posts.find_one({"id": 12})["title"] == "Hello"
+    assert sandbox_db.users.find_one({"id": "stale-user"}) is None
+    assert "unmanaged_collection" not in sandbox_db.list_collection_names()
+    assert sandbox_db.migration_state.find_one({"_id": "supabase-to-mongo"})["status"] == "complete"
+    # Importing directly must not create a control database or any backup database.
+    names = sandbox_db.client.list_database_names()
+    assert not any(name.startswith(sandbox_db.name + "_") for name in names)
 
 
-def test_generation_collision_does_not_delete_or_overwrite_existing_data(sandbox_db, tmp_path, monkeypatch):
+def test_repeated_reset_discards_changes_and_imports_latest_source(sandbox_db, tmp_path, monkeypatch):
+    source1, *_ = make_bundle(tmp_path / "source-one")
+    source2, *_ = make_bundle(tmp_path / "source-two")
+    _change_post_title(source2, "Latest source")
+    _mock_export(monkeypatch, source1)
+    sandbox.reset_sandbox(sandbox_db, _settings(sandbox_db))
+    sandbox_db.posts.update_one({"id": 12}, {"$set": {"title": "Edited by app"}})
+    sandbox_db.runtime_cache.insert_one({"_id": "stale"})
+    _mock_export(monkeypatch, source2)
+    sandbox.reset_sandbox(sandbox_db, _settings(sandbox_db))
+    assert sandbox_db.posts.find_one({"id": 12})["title"] == "Latest source"
+    assert "runtime_cache" not in sandbox_db.list_collection_names()
+
+
+def test_invalid_source_fails_before_database_is_wiped(sandbox_db, tmp_path, monkeypatch):
     source, *_ = make_bundle(tmp_path / "source")
+    (source / "posts.jsonl").write_text("corrupt snapshot\n")
     _mock_export(monkeypatch, source)
-    original_lease = sandbox._ResetLease
-
-    def fixed_lease(db):
-        lease = original_lease(db)
-        lease.owner = "a" * 32
-        return lease
-
-    monkeypatch.setattr(sandbox, "_ResetLease", fixed_lease)
-    existing = sandbox_db.client[sandbox.sandbox_database_name(TEST_DATABASE, "a" * 32)]
-    existing.marker.insert_one({"_id": "untouched"})
-    with pytest.raises(RuntimeError, match="stage=prepare_target"):
-        sandbox.reset_sandbox(sandbox_db, _settings())
-    assert existing.marker.find_one({"_id": "untouched"})
-    assert existing.users.count_documents({}) == 0
+    sandbox_db.marker.insert_one({"_id": "existing"})
+    with pytest.raises(RuntimeError, match="stage=validate_snapshot"):
+        sandbox.reset_sandbox(sandbox_db, _settings(sandbox_db))
+    assert sandbox_db.marker.find_one({"_id": "existing"})
 
 
-def test_import_failure_reports_stage_and_code_without_private_driver_message(
+def test_import_failure_reports_safe_context_and_next_reset_recovers(
     sandbox_db, tmp_path, monkeypatch, caplog
 ):
     source, *_ = make_bundle(tmp_path / "source")
     _mock_export(monkeypatch, source)
 
-    def failed_import(*args, **kwargs):
-        raise OperationFailure(
-            "mongodb://private-user:private-password@private-host/private-data",
-            code=8000,
-            details={
-                "errmsg": "Database name private-data is too long. Max database name length is 38 bytes."
-            },
-        )
+    def failed_import(db, *_args, **_kwargs):
+        db.users.insert_one({"id": "partial-import"})
+        raise OperationFailure("mongodb://private:private-password@host/private-data", code=8000)
 
-    monkeypatch.setattr(sandbox, "import_bundle", failed_import)
-    with pytest.raises(RuntimeError) as error:
-        sandbox.reset_sandbox(sandbox_db, _settings())
+    with monkeypatch.context() as scoped:
+        scoped.setattr(sandbox, "import_bundle", failed_import)
+        with pytest.raises(RuntimeError) as error:
+            sandbox.reset_sandbox(sandbox_db, _settings(sandbox_db))
     output = str(error.value) + caplog.text
-    assert "stage=import_snapshot" in output
-    assert "mongo_code=8000" in output
-    assert "reason=database_name_too_long" in output
-    assert "private-password" not in output
-    assert "private-data" not in output
+    assert "stage=import_snapshot" in output and "mongo_code=8000" in output
+    assert "private-password" not in output and "private-data" not in output
+    sandbox.reset_sandbox(sandbox_db, _settings(sandbox_db))
+    assert sandbox_db.users.find_one({"id": "partial-import"}) is None
+    assert sandbox_db.migration_state.find_one({"_id": "supabase-to-mongo"})["status"] == "complete"
 
 
-def test_repeated_reset_discards_sandbox_writes_and_uses_latest_snapshot(sandbox_db, tmp_path, monkeypatch):
-    source1, *_ = make_bundle(tmp_path / "source-one")
-    source2, *_ = make_bundle(tmp_path / "source-two")
-    _change_post_title(source2, "Latest source")
-    current_source = [source1]
-
-    def export(_database_url, output, **_kwargs):
-        shutil.copytree(current_source[0], output)
-
-    monkeypatch.setattr(sandbox, "export_from_postgres", export)
-    old_generation = sandbox.reset_sandbox(sandbox_db, _settings())
-    old_db = sandbox_db.client[sandbox.sandbox_database_name(TEST_DATABASE, old_generation)]
-    old_db.posts.update_one({"id": 12}, {"$set": {"title": "Edited by app"}})
-    old_db["runtime_cache"].insert_one({"_id": "stale"})
-
-    current_source[0] = source2
-    generation = sandbox.reset_sandbox(sandbox_db, _settings())
-    generation_db = sandbox_db.client[sandbox.sandbox_database_name(TEST_DATABASE, generation)]
-
-    assert generation_db.posts.find_one({"id": 12})["title"] == "Latest source"
-    assert "runtime_cache" not in generation_db.list_collection_names()
-    assert old_db.name not in sandbox_db.client.list_database_names()
-    assert generation != old_generation
-    assert sandbox.sandbox_ready(sandbox_db, generation)
-
-
-def test_invalid_snapshot_preserves_preexisting_active_generation(sandbox_db, tmp_path, monkeypatch):
-    valid_source, *_ = make_bundle(tmp_path / "valid-source")
-    _mock_export(monkeypatch, valid_source)
-    previous_generation = sandbox.reset_sandbox(sandbox_db, _settings())
-    previous_db = sandbox_db.client[sandbox.sandbox_database_name(TEST_DATABASE, previous_generation)]
-    previous_db.posts.update_one({"id": 12}, {"$set": {"title": "keep existing"}})
-    previous_db["unrelated"].insert_one({"_id": "keep"})
-
-    invalid_source, *_ = make_bundle(tmp_path / "invalid-source")
-    (invalid_source / "posts.jsonl").write_text("corrupt snapshot\n")
-    _mock_export(monkeypatch, invalid_source)
-
-    with pytest.raises(RuntimeError, match="Mongo sandbox startup failed"):
-        sandbox.reset_sandbox(sandbox_db, _settings())
-
-    assert previous_db.posts.find_one({"id": 12})["title"] == "keep existing"
-    assert previous_db.unrelated.find_one({"_id": "keep"})
-    assert previous_db.name in sandbox_db.client.list_database_names()
-    state = sandbox_db.client[CONTROL_DATABASE].startup.find_one({"_id": "startup"})
-    assert state["status"] == "failed"
-    assert state["active_database"] == previous_db.name
-
-
-def test_reset_uses_configured_namespace_and_does_not_remove_other_namespaces(
-    sandbox_db, tmp_path, monkeypatch
-):
+def test_reset_does_not_modify_another_database(sandbox_db, tmp_path, monkeypatch):
     source, *_ = make_bundle(tmp_path / "source")
     _mock_export(monkeypatch, source)
-    custom = sandbox_db.client["sa_custom_namespace"]
-    other_generation = sandbox.sandbox_database_name(TEST_DATABASE, "a" * 32)
-    sandbox_db.client[other_generation].marker.insert_one({"_id": "untouched"})
-    control = sandbox_db.client[f"{custom.name}_control"].startup
-    # A stale pointer to another namespace must not authorize deleting that database.
-    control.insert_one({"_id": "startup", "status": "ready", "active_database": other_generation})
+    other = sandbox_db.client[f"sa_other_{uuid4().hex[:16]}"]
     try:
-        generation = sandbox.reset_sandbox(custom, _settings(custom.name))
-        active = sandbox.active_sandbox_database(sandbox_db.client, _settings(custom.name))
-        assert active.name == sandbox.sandbox_database_name(custom.name, generation)
-        assert active.posts.find_one({"id": 12})["title"] == "Hello"
-        assert sandbox.sandbox_ready(active, generation)
-        assert not sandbox.sandbox_ready(sandbox_db, generation)
-        assert sandbox_db.client[other_generation].marker.find_one({"_id": "untouched"})
-        assert not custom.list_collection_names()
+        other.marker.insert_one({"_id": "untouched"})
+        sandbox.reset_sandbox(sandbox_db, _settings(sandbox_db))
+        assert other.marker.find_one({"_id": "untouched"})
     finally:
-        for name in sandbox_db.client.list_database_names():
-            if sandbox._is_generation_database(name, custom.name):
-                sandbox_db.client.drop_database(name)
-        sandbox_db.client.drop_database(f"{custom.name}_control")
+        sandbox_db.client.drop_database(other.name)
 
 
-def test_reset_refuses_concurrent_startup_reset(sandbox_db, tmp_path, monkeypatch):
-    source, *_ = make_bundle(tmp_path / "source")
-    entered_export = threading.Event()
-    release_export = threading.Event()
-
-    def blocked_export(_database_url, output, **_kwargs):
-        entered_export.set()
-        assert release_export.wait(timeout=5)
-        shutil.copytree(source, output)
-
-    monkeypatch.setattr(sandbox, "export_from_postgres", blocked_export)
-    outcome = []
-    worker = threading.Thread(target=lambda: outcome.append(sandbox.reset_sandbox(sandbox_db, _settings())))
-    worker.start()
-    try:
-        assert entered_export.wait(timeout=5)
-        with pytest.raises(RuntimeError, match="Mongo sandbox startup failed"):
-            sandbox.reset_sandbox(sandbox_db, _settings())
-    finally:
-        release_export.set()
-        worker.join(timeout=10)
-
-    assert not worker.is_alive()
-    assert outcome and sandbox.sandbox_ready(sandbox_db, outcome[0])
-
-
-def test_expired_owner_import_cannot_publish_or_contaminate_new_generation(sandbox_db, tmp_path, monkeypatch):
-    source, *_ = make_bundle(tmp_path / "source")
-    _mock_export(monkeypatch, source)
-    original_import = sandbox.import_bundle
-    first_import_started = threading.Event()
-    release_first_import = threading.Event()
-    import_lock = threading.Lock()
-    import_number = [0]
-    old_database_names = []
-
-    def pause_first_import(db, bundle, *, apply):
-        with import_lock:
-            import_number[0] += 1
-            this_import = import_number[0]
-        if this_import == 1:
-            old_database_names.append(db.name)
-            first_import_started.set()
-            assert release_first_import.wait(timeout=10)
-        return original_import(db, bundle, apply=apply)
-
-    monkeypatch.setattr(sandbox, "import_bundle", pause_first_import)
-    first_result = []
-
-    def run_first_reset():
-        try:
-            first_result.append(sandbox.reset_sandbox(sandbox_db, _settings()))
-        except RuntimeError as exc:
-            first_result.append(exc)
-
-    worker = threading.Thread(target=run_first_reset)
-    worker.start()
-    try:
-        assert first_import_started.wait(timeout=10)
-        state = sandbox_db.client[CONTROL_DATABASE].startup
-        state.update_one(
-            {"_id": "startup"},
-            {"$set": {"lease_until": datetime.now(timezone.utc) - timedelta(seconds=1)}},
-        )
-
-        new_generation = sandbox.reset_sandbox(sandbox_db, _settings())
-    finally:
-        release_first_import.set()
-        worker.join(timeout=15)
-
-    assert not worker.is_alive()
-    assert len(first_result) == 1 and isinstance(first_result[0], RuntimeError)
-    state = sandbox_db.client[CONTROL_DATABASE].startup.find_one({"_id": "startup"})
-    assert state["owner"] == new_generation
-    assert state["status"] == "ready"
-    assert state["active_database"] == sandbox.sandbox_database_name(TEST_DATABASE, new_generation)
-    assert sandbox.sandbox_ready(sandbox_db, new_generation)
-    assert old_database_names[0] not in sandbox_db.client.list_database_names()
-    active_db = sandbox_db.client[state["active_database"]]
-    assert active_db.posts.find_one({"id": 12})["title"] == "Hello"
-
-
-def test_real_source_startup_resets_data_served_by_api(
+def test_real_source_startup_replaces_the_same_database_served_by_api(
     sandbox_db,
     source_database_fixture,  # noqa: F811
     monkeypatch,
@@ -343,7 +151,7 @@ def test_real_source_startup_resets_data_served_by_api(
     settings = Settings(
         _env_file=None,
         **mongo_settings(os.environ[SANDBOX_URI_ENV]),
-        mongodb_database=TEST_DATABASE,
+        mongodb_database=sandbox_db.name,
         app_session_secret=SecretStr("test-only-independent-secret-1234567890"),
         supabase_url="https://identity.example.test",
         supabase_publishable_key="test-publishable-key",
@@ -352,7 +160,6 @@ def test_real_source_startup_resets_data_served_by_api(
         cors_origins=["http://localhost:5173"],
     )
     monkeypatch.setattr(main, "get_settings", lambda: settings)
-
     original_export = sandbox.export_from_postgres
     avatar_http = httpx.Client(
         transport=httpx.MockTransport(
@@ -372,31 +179,21 @@ def test_real_source_startup_resets_data_served_by_api(
     headers = {"Authorization": "Bearer " + create_app_session_token(user, settings)}
     with psycopg.connect(source_url) as connection:
         source_before = connection.execute("SELECT id, title, body FROM public.posts ORDER BY id").fetchall()
-
     try:
         with TestClient(main.create_app()) as first_api:
-            first_generation = first_api.app.state.sandbox_generation
-            first_database = sandbox.sandbox_database_name(TEST_DATABASE, first_generation)
-            first_posts = first_api.get("/api/posts", headers=headers)
-            assert first_posts.status_code == 200, first_posts.text
-            assert [post["title"] for post in first_posts.json()] == ["A later question", "A useful question"]
-            created = first_api.post(
-                "/api/posts", headers=headers, json={"title": "Only in this generation", "body": "temporary"}
+            assert first_api.app.state.db.name == sandbox_db.name
+            assert first_api.get("/health").status_code == 200
+            assert (
+                first_api.post(
+                    "/api/posts", headers=headers, json={"title": "Temporary test post", "body": "temporary"}
+                ).status_code
+                == 201
             )
-            assert created.status_code == 201, created.text
-
         with TestClient(main.create_app()) as second_api:
-            second_generation = second_api.app.state.sandbox_generation
-            second_posts = second_api.get("/api/posts", headers=headers)
-            assert second_posts.status_code == 200, second_posts.text
-            assert [post["title"] for post in second_posts.json()] == [
-                "A later question",
-                "A useful question",
-            ]
-
-        assert second_generation != first_generation
-        assert first_database not in sandbox_db.client.list_database_names()
-        assert sandbox.sandbox_ready(sandbox_db, second_generation)
+            assert second_api.app.state.db.name == sandbox_db.name
+            response = second_api.get("/api/posts", headers=headers)
+            assert response.status_code == 200, response.text
+            assert [post["title"] for post in response.json()] == ["A later question", "A useful question"]
         with psycopg.connect(source_url) as connection:
             source_after = connection.execute(
                 "SELECT id, title, body FROM public.posts ORDER BY id"
@@ -406,51 +203,40 @@ def test_real_source_startup_resets_data_served_by_api(
         avatar_http.close()
 
 
-def test_default_app_startup_resets_before_bootstrap(monkeypatch):
+@pytest.mark.parametrize("reset_fails", [False, True])
+def test_startup_resets_before_serving_and_propagates_failure(monkeypatch, reset_fails):
     events = []
     settings = SimpleNamespace(
         mongodb_uri="mongodb://local",
-        mongodb_database=TEST_DATABASE,
+        mongodb_database="linghang_main_app",
         cors_origins=["http://localhost:5173"],
     )
-
-    class FakeDb:
-        name = TEST_DATABASE
 
     class FakeClient:
         admin = SimpleNamespace(command=lambda command: events.append("hello") or {"setName": "rs0"})
 
-        def __getitem__(self, _name):
-            return FakeDb()
+        def __getitem__(self, name):
+            return SimpleNamespace(name=name)
 
         def close(self):
             events.append("close")
 
+    def reset(db, _settings):
+        assert db.name == "linghang_main_app"
+        events.append("reset")
+        if reset_fails:
+            raise RuntimeError("Import failed")
+
     monkeypatch.setattr(main, "get_settings", lambda: settings)
     monkeypatch.setattr(main, "MongoClient", lambda *_args, **_kwargs: FakeClient())
-    monkeypatch.setattr(main, "reset_sandbox", lambda _db, _settings: events.append("reset") or "b" * 32)
+    monkeypatch.setattr(main, "reset_sandbox", reset)
     monkeypatch.setattr(main, "bootstrap_indexes", lambda _db: events.append("bootstrap"))
-
-    with TestClient(main.create_app()):
-        assert events == ["hello", "reset", "bootstrap"]
-    assert events[-1] == "close"
-
-
-def test_http_health_fails_closed_when_generation_is_no_longer_ready(monkeypatch):
-    class FakeDb:
-        pinged = False
-
-        def command(self, _command):
-            self.pinged = True
-
-    db = FakeDb()
-    monkeypatch.setattr(main, "bootstrap_indexes", lambda _db: None)
-    monkeypatch.setattr(main, "sandbox_ready", lambda _db, _generation: False)
-
-    with TestClient(main.create_app(db=db)) as client:
-        client.app.state.sandbox_generation = "old-generation"
-        response = client.get("/health")
-
-    assert response.status_code == 503
-    assert response.text == "Mongo sandbox is restarting"
-    assert not db.pinged
+    if reset_fails:
+        with pytest.raises(RuntimeError, match="Import failed"), TestClient(main.create_app()):
+            pytest.fail("Startup must fail")
+        assert events == ["hello", "reset", "close"]
+    else:
+        with TestClient(main.create_app()) as app:
+            assert app.app.state.db.name == "linghang_main_app"
+            assert events == ["hello", "reset", "bootstrap"]
+        assert events[-1] == "close"

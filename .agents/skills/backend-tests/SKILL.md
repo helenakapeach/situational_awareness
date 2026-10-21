@@ -33,7 +33,7 @@ npm run build
 - 对照 `src/backend.js` 的 action 和 `test/fixtures/backend-contract.json`。新增 action 同步修改 HTTP adapter、FastAPI route、Python service 和两端 contract 测试，不能只让界面出现新按钮。
 - 按 `supabase/migrations/` 中对应 SQL 核对权限、返回字段、排序、数量限制、匿名身份和错误行为。Node 的 Supabase mock 只覆盖 SDK 调用与结果组装，不能证明线上 SQL/RLS 正确。
 - 默认访问始终走 Supabase，只有 `?backend=mongo` 走 API；Mongo 失败不能回退到 Supabase 业务写入。Google Auth 继续使用 Supabase。
-- 启动重建验证应覆盖只读导出、完整数据校验、ID 延续、重复启动清空测试写入、过期导入进程无法启用旧副本，以及未就绪时返回 503。
+- 启动重建验证应覆盖只读导出、完整数据校验、ID 延续、直接清空整个目标数据库、重复启动丢弃测试写入、其他数据库不受影响、导入失败中止启动及再次启动恢复。业务数据应直接保存在 `MONGODB_DATABASE` 指定的数据库中，不创建备份数据库。
 
 ## 结果与边界
 

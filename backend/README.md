@@ -35,7 +35,7 @@ backend/                 # 后端项目根目录，放置依赖、配置和部�
       service.py         # 请求身份、事务、成员和管理员检查
     supabase_dump.py     # 只读导出来源快照
     migration.py         # 校验快照、适配字段、导入和核对 Mongo
-    sandbox.py           # 启动重建、租约及新旧沙箱代次切换
+    sandbox.py           # 启动时清空并重新导入配置的数据库
   tests/                 # 后端测试
   scripts/               # 可重复使用的部署工具
 ```
@@ -75,7 +75,7 @@ VITE_API_BASE_URL=http://localhost:26276
 
 重启 Vite。打开 `http://localhost:5173/?backend=mongo` 访问本地 API，或打开 `http://localhost:5173/` 使用 Supabase。`?demo=1` 仍启用浏览器演示模式。`VITE_API_BASE_URL` 只覆盖显式选择的 API 地址，不会切换普通访客；未设置时，`?backend=mongo` 使用专用的 `linghang-main-app` 沙箱地址。OAuth 跳转和复制的帖子链接会保留 Mongo 参数。Mongo 模式的草稿、未读标记和目标帖子使用独立浏览器存储键；主题与 Supabase 登录共用。
 
-API 文档位于 `http://localhost:26276/docs`。`/health` 仅在当前代次验证就绪且 Mongo 可连接时成功。启动行为、重置隔离和部署前提见 [ROLLOUT.md](./ROLLOUT.md)。
+API 文档位于 `http://localhost:26276/docs`。启动导入完成后才对外提供 API；`/health` 检查 Mongo 连接。启动行为、重置隔离和部署前提见 [ROLLOUT.md](./ROLLOUT.md)。
 
 ## 身份验证
 
@@ -99,7 +99,7 @@ uv run python -m app.admin create-invite YOUR-CODE --max-uses 50
 uv run python -m app.admin grant-admin admin@example.com
 ```
 
-启动时会导入来源成员、邀请、资料和 cohort，不会创建替代数据。管理员命令会解析当前就绪的沙箱代次，其更改会在下次启动时丢弃。命令需要直接 Mongo 访问权限，不会开放可提升权限的 HTTP 路由。
+启动时会导入来源成员、邀请、资料和 cohort，不会创建替代数据。管理员命令直接操作 `MONGODB_DATABASE` 指定的数据库，其更改会在下次启动时丢弃。命令需要直接 Mongo 访问权限，不会开放可提升权限的 HTTP 路由。
 
 ## 现有操作到 HTTP 的映射
 
@@ -139,7 +139,7 @@ Mongo 集成测试使用随机命名的 `sa_test_*` 数据库，并在结束后�
 
 ## 迁移范围
 
-每次真实 API 启动都会批量复制九张 Supabase 业务表、被引用用户的最少身份字段、已确认头像和数字序列高水位。导出只读，Mongo 操作不会写回 Supabase。下次启动会丢弃所有沙箱更改。Auth 密码、session 和 refresh token 始终只保存在 Supabase。此设计会将完整业务行（包括私密联系方式）复制到沙箱；API 的常规隐私检查仍然适用。
+每次真实 API 启动会直接清空 `MONGODB_DATABASE` 指定的整个数据库（默认 `linghang_main_app`），再批量复制九张 Supabase 业务表、被引用用户的最少身份字段、已确认头像和数字序列高水位。导出只读，Mongo 操作不会写回 Supabase。下次启动会丢弃所有沙箱更改。Auth 密码、session 和 refresh token 始终只保存在 Supabase。此设计会将完整业务行（包括私密联系方式）复制到沙箱；API 的常规隐私检查仍然适用。
 
 通知、已读标记、里程碑和草稿沿用现有浏览器行为。搜索会查询 Mongo 的所有帖子，返回标题/正文中最新的 50 条字面子串匹配，并补齐回复、投票和所有权状态。`listMine` 最多返回调用者的 100 条帖子和 100 条回复，包括匿名内容，但不暴露作者 ID。这两项操作要求成员有效，并与新增 Supabase `search_posts` / `my_content` RPC 行为一致。`getPost` API 可供直接客户端使用；UI 在两种后端仍沿用现有深链导航。SQL RPC `own_content_ids`、`op_reply_ids` 及 profile identity trigger 的规则由服务层实现。
 

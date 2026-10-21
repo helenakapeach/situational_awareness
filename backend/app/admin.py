@@ -6,7 +6,6 @@ from pymongo import MongoClient
 
 from .config import get_settings
 from .database import bootstrap_indexes
-from .sandbox import active_sandbox_database
 
 
 def main():
@@ -20,7 +19,7 @@ def main():
     args = parser.parse_args()
     settings = get_settings()
     with MongoClient(settings.mongodb_uri, tz_aware=True) as client:
-        db = active_sandbox_database(client, settings)
+        db = client[settings.mongodb_database]
         bootstrap_indexes(db)
         if args.command == "create-invite":
             code = args.code.strip().upper()

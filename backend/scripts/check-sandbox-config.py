@@ -52,7 +52,7 @@ def main():
             file=sys.stderr,
         )
         return 1
-    print(f"Startup configuration checked; import generations use {settings.mongodb_database}_<generation>.")
+    print(f"Startup configuration checked; startup overwrites database {settings.mongodb_database}.")
     return 0
 
 

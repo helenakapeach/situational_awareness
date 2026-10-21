@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from pymongo import MongoClient
@@ -14,7 +14,7 @@ from .forum.router import router as forum_router
 from .membership.router import router as membership_router
 from .profile.router import assets_router
 from .profile.router import router as profile_router
-from .sandbox import reset_sandbox, sandbox_database_name, sandbox_ready
+from .sandbox import reset_sandbox
 
 API_PREFIX = "/api"
 
@@ -31,12 +31,7 @@ def create_app(db=None) -> FastAPI:
                 if not hello.get("setName") and hello.get("msg") != "isdbgrid":
                     raise RuntimeError("MongoDB must be a replica set or mongos: transactions are required")
                 application.state.db = client[settings.mongodb_database]
-                application.state.sandbox_generation = await run_in_threadpool(
-                    reset_sandbox, application.state.db, settings
-                )
-                application.state.db = client[
-                    sandbox_database_name(settings.mongodb_database, application.state.sandbox_generation)
-                ]
+                await run_in_threadpool(reset_sandbox, application.state.db, settings)
             else:
                 application.state.db = db
             await run_in_threadpool(bootstrap_indexes, application.state.db)
@@ -50,12 +45,6 @@ def create_app(db=None) -> FastAPI:
     # The factory reads settings; importing this module needs no configured secrets.
     @application.middleware("http")
     async def security_headers(request: Request, call_next):
-        generation = getattr(request.app.state, "sandbox_generation", None)
-        if generation and not await run_in_threadpool(sandbox_ready, request.app.state.db, generation):
-            # Old revisions must stop serving when a new startup resets the shared sandbox.
-            return Response(
-                status_code=503, content="Mongo sandbox is restarting", headers={"Cache-Control": "no-store"}
-            )
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         if request.url.path.startswith(f"{API_PREFIX}/"):
