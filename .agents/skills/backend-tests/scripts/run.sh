@@ -64,7 +64,11 @@ export TEST_MONGODB_URI="mongodb://${MONGO_ADDRESS}/?replicaSet=rs0&directConnec
 export TEST_SANDBOX_MONGODB_URI="${TEST_MONGODB_URI}"
 export TEST_POSTGRES_URL="postgresql://postgres:local-test-only@${POSTGRES_ADDRESS}/postgres"
 # 覆盖应用设置，防止误读本地 .env 中的真实运行凭据。
-export MONGODB_URI="${TEST_MONGODB_URI}"
+export MONGODB_SERVER="mongodb://${MONGO_ADDRESS}"
+export MONGODB_USERNAME=''
+export MONGODB_PASSWORD=''
+export MONGODB_APP_NAME=linghang-main-app-tests
+export MONGODB_OPTIONS='{"replicaSet":"rs0","directConnection":true}'
 export MONGODB_DATABASE=linghang_main_app_sandbox
 export APP_SESSION_SECRET=test-only-independent-secret-1234567890
 export APP_SESSION_TTL_SECONDS=3600

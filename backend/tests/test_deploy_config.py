@@ -10,10 +10,24 @@ import pytest
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts/check-sandbox-config.py"
 
 
-@pytest.mark.parametrize("change", [{}, {"MONGODB_DATABASE": "linghang_main_app"}, {"SUPABASE_DB_URL": ""}])
+@pytest.mark.parametrize(
+    "change",
+    [
+        {},
+        {"MONGODB_DATABASE": "linghang_main_app"},
+        {"SUPABASE_DB_URL": ""},
+        {"MONGODB_SERVER": ""},
+        {"MONGODB_PASSWORD": ""},
+        {"MONGODB_OPTIONS": "not-json"},
+    ],
+)
 def test_preflight_validates_the_file_without_printing_credentials(tmp_path, change):
     values = {
-        "MONGODB_URI": "mongodb://readonly:do-not-print@localhost:27017/",
+        "MONGODB_SERVER": "mongodb://localhost:27017",
+        "MONGODB_USERNAME": "readonly",
+        "MONGODB_PASSWORD": "do-not-print",
+        "MONGODB_APP_NAME": "linghang-main-app",
+        "MONGODB_OPTIONS": '{"replicaSet":"rs0","directConnection":true}',
         "MONGODB_DATABASE": "linghang_main_app_sandbox",
         "APP_SESSION_SECRET": "test-only-independent-secret-1234567890",
         "SUPABASE_DB_URL": "postgresql://readonly:never-print-this@localhost:5432/postgres",

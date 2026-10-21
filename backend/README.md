@@ -51,15 +51,19 @@ backend/                 # 后端项目根目录，放置依赖、配置和部�
 ```sh
 cd backend
 uv sync --locked --extra migration
-cp .env.example .env
+# 仅首次创建；已有 .env 时保留配置。
+cp -n .env.example .env
 openssl rand -hex 32
 # 将生成的值填入 backend/.env 的 APP_SESSION_SECRET。
 # SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY 使用现有 Google Auth 项目配置。
 # SUPABASE_DB_URL 填入该项目的 PostgreSQL direct/session-pooler 连接。
 # MONGODB_DATABASE 固定为 linghang_main_app_sandbox，其他目标会被拒绝。
+# 只有使用本地 Mongo 时执行；已有 Atlas 连接时跳过。
 docker compose up -d --wait
 uv run --extra migration uvicorn app.main:create_app --factory --workers 1 --reload --port 26276
 ```
+
+Mongo 连接不再使用 `MONGODB_URI` 环境变量，改为以下独立字段：`MONGODB_SERVER`（含 `mongodb://` 或 `mongodb+srv://` 的服务器地址）、`MONGODB_USERNAME`、`MONGODB_PASSWORD`（原始密码，无需 URL 编码）和 `MONGODB_APP_NAME`。`MONGODB_OPTIONS` 是 JSON 对象，用于 `retryWrites`、`w`、`replicaSet` 和 `directConnection` 等连接选项。服务器地址不能包含凭据、数据库路径或查询参数；本地无认证 Mongo 的用户名和密码均留空，Atlas 则同时填写两项。代码生成连接串并转义用户名、密码。示例见 [backend/.env.example](./.env.example)。
 
 MongoDB **必须支持事务**：使用上述本地单节点 replica set 或 MongoDB Atlas。独立 `mongod` 会在启动时被拒绝。本地容器只绑定 loopback 端口 27017，仅用于开发。部署时使用启用认证和 TLS 的 MongoDB；不要将开发容器暴露到互联网。事务行为遵循 [PyMongo transaction API](https://www.mongodb.com/docs/languages/python/pymongo-driver/current/crud/transactions/)。
 
@@ -78,7 +82,7 @@ API 文档位于 `http://localhost:26276/docs`。`/health` 仅在当前代次验
 实现遵循 `~/gitSpot/linghang-appt/backend/app/core/auth.py` 的 `create_app_session_token` / `verify_app_session_token` 模式：验证外部身份后，签发 HS256 应用 JWT，包含 `sub`、`email`、`iat`、`exp`、`iss`、`aud` 和 `typ`，请求通过 Bearer header 携带。签发者、token 类型、audience 和密钥均独立于 linghang-appt，因此其 token 在本服务中无效。
 
 - `POST /api/auth/session` 接收 `{ "provider": "supabase", "access_token": "..." }`，使用配置的 Supabase `/auth/v1/user` 验证 token，要求 Google 登录和已确认邮箱，并返回 `{ accessToken, tokenType, expiresIn, user }`。
-- 可选 Auth0 交换接收 `{ "provider": "auth0", "idToken": "...", "nonce": "..." }`。配置 `AUTH0_DOMAIN` 和 `AUTH0_CLIENT_ID` 后，会验证 RS256 签名/JWKS、issuer、audience、过期时间、Google connection、已验证邮箱和传入的 nonce。这是 API 集成点；现有 UI 仍通过 Supabase 发起 Google 登录。
+- 可选 Auth0 交换接收 `{ "provider": "auth0", "idToken": "...", "nonce": "..." }`。配置 `AUTH0_DOMAIN` 和 `AUTH0_CLIENT_ID` 后，会验证 RS256 签名/JWKS、issuer、audience、过期时间、Google connection、已验证邮箱和传入的 nonce。这是 API 集成点；现有 UI 仍通过 Supabase 发起 Google 登录。`AUTH0_DOMAIN` 和 `AUTH0_CLIENT_ID` 可以留空，省略 `provider` 时默认选择 Supabase；显式选择 Auth0 却未配置时返回 503，不会把 Auth0 token 当作 Supabase token。
 - `GET /api/auth/me` 返回已认证用户信息，不代表成员权限。
 
 浏览器在内存中保存应用 token；token 过期或 Supabase 刷新 session 后会重新交换。退出登录会清除缓存并退出 Supabase。已复制的应用 token 会持续有效直到过期；系统没有 token 撤销列表。每次操作都会从 Mongo 读取成员、管理员和禁用状态，因此禁用成员后，其受保护业务操作会立即被阻止，无需等待 JWT 过期。
@@ -151,6 +155,10 @@ uv run --project backend --extra migration python backend/scripts/check-sandbox-
 PROJECT_ID=project-d65805f6-4709-4498-9df \
   REGION=us-east1 backend/scripts/deploy-cloud-run.sh
 ```
+
+脚本默认使用 `backend/.env`，与执行命令时的工作目录无关；可通过 `ENV_FILE=/绝对路径/文件` 改用其他配置。它依次执行 `check-sandbox-config.py`、`sync-secret.sh`，再通过 `gcloud run deploy --source backend` 使用 `backend/Dockerfile` 构建镜像。默认 `SYNC_SECRET=true`，配置文件内容变更时会上传新的 Secret Manager 版本，随后将最新版本挂载到容器的 `/secrets/.env`。应用启动时优先读取该挂载文件。本地应用则从当前工作目录读取 `.env`，因此应先 `cd backend`。已有进程内的同名环境变量优先于文件值。
+
+`PROJECT_ID`、`REGION`、`ENV_FILE` 是 shell 部署参数，脚本不会通过 `source backend/.env` 加载它们。`SYNC_SECRET=false` 会跳过本地文件上传，容器继续使用 Secret Manager 中的最新配置。部署前确认 `CORS_ORIGINS` 包含实际前端 origin；需兼顾本地联调时，也保留 `http://localhost:5173`。
 
 `backend/.env` 已从 Git、Docker 和 GCloud source uploader 排除。凭据会直接上传至 Secret Manager，不会写入镜像。Cloud Run IAM 允许公开调用 API，以便 Google 登录和 token 交换可达；受保护业务路由仍要求应用 JWT 和 Mongo 成员检查。
 

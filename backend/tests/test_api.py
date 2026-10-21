@@ -223,11 +223,8 @@ def test_validation_and_cors(client, db):
 
 
 def test_real_app_startup_connects_to_replica_set(db, monkeypatch):
-    import os
-
     from app import main
 
-    monkeypatch.setenv("MONGODB_URI", os.environ["TEST_MONGODB_URI"])
     monkeypatch.setenv("MONGODB_DATABASE", db.name)
     # Test the real replica-set connection without resetting a fixture database.
     # The full reset hook and its source import have dedicated sandbox integration tests.

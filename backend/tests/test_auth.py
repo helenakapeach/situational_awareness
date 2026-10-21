@@ -92,11 +92,21 @@ def test_supabase_token_verified_remotely_not_trusted_from_payload(monkeypatch):
         )
 
     monkeypatch.setattr("app.auth.service.httpx.get", get)
+    monkeypatch.setenv("AUTH0_DOMAIN", "")
+    monkeypatch.setenv("AUTH0_CLIENT_ID", "")
     user = verify_identity(SessionRequest(access_token="external-token"), get_settings())
     assert user["id"] == "supabase-user"
     assert user["email"] == "user@example.com"
     assert user["user_metadata"] == {"full_name": "User"}
     assert calls[0][1]["headers"]["Authorization"] == "Bearer external-token"
+
+
+def test_explicit_auth0_request_without_configuration_does_not_fall_back(monkeypatch):
+    monkeypatch.setenv("AUTH0_DOMAIN", "")
+    monkeypatch.setenv("AUTH0_CLIENT_ID", "")
+    with pytest.raises(HTTPException) as error:
+        verify_identity(SessionRequest(provider="auth0", idToken="auth0-token"), get_settings())
+    assert error.value.status_code == 503
 
 
 @pytest.mark.parametrize(

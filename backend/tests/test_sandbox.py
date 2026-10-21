@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
+from conftest import mongo_settings
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from pymongo import MongoClient
@@ -268,7 +269,7 @@ def test_real_source_startup_resets_data_served_by_api(
     psycopg, source_url = source_database_fixture
     settings = Settings(
         _env_file=None,
-        mongodb_uri=os.environ[SANDBOX_URI_ENV],
+        **mongo_settings(os.environ[SANDBOX_URI_ENV]),
         mongodb_database=sandbox.SANDBOX_DATABASE,
         app_session_secret=SecretStr("test-only-independent-secret-1234567890"),
         supabase_url="https://identity.example.test",

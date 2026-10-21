@@ -23,7 +23,7 @@ def main():
         values = dotenv_values(args.env_file)
         required = (
             "MONGODB_DATABASE",
-            "MONGODB_URI",
+            "MONGODB_SERVER",
             "APP_SESSION_SECRET",
             "SUPABASE_DB_URL",
             "SUPABASE_URL",
@@ -33,7 +33,14 @@ def main():
             raise ValueError("missing configuration")
         if values.get("CORS_ORIGINS"):
             values["CORS_ORIGINS"] = json.loads(values["CORS_ORIGINS"])
-        settings = Settings(_env_file=None, **{key.lower(): value for key, value in values.items()})
+        if values.get("MONGODB_OPTIONS"):
+            values["MONGODB_OPTIONS"] = json.loads(values["MONGODB_OPTIONS"])
+        settings = Settings(
+            _env_file=None,
+            # Validate only the deployment file, without merging ambient connection options or credentials.
+            _env_prefix="__SA_PREFLIGHT_UNUSED_",
+            **{key.lower(): value for key, value in values.items()},
+        )
         if settings.mongodb_database != SANDBOX_DATABASE:
             raise ValueError("unsafe database")
         if not settings.supabase_db_url.get_secret_value() or not settings.supabase_url:
@@ -43,7 +50,8 @@ def main():
     except Exception:
         print(
             f"Sandbox configuration rejected: set MONGODB_DATABASE={SANDBOX_DATABASE}, SUPABASE_DB_URL, "
-            "SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, MONGODB_URI and APP_SESSION_SECRET in the env file.",
+            "SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, MONGODB_SERVER and APP_SESSION_SECRET in the env file; "
+            "configure MONGODB_USERNAME and MONGODB_PASSWORD together, with MONGODB_APP_NAME and MONGODB_OPTIONS.",
             file=sys.stderr,
         )
         return 1
