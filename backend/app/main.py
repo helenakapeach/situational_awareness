@@ -34,7 +34,9 @@ def create_app(db=None) -> FastAPI:
                 application.state.sandbox_generation = await run_in_threadpool(
                     reset_sandbox, application.state.db, settings
                 )
-                application.state.db = client[sandbox_database_name(application.state.sandbox_generation)]
+                application.state.db = client[
+                    sandbox_database_name(settings.mongodb_database, application.state.sandbox_generation)
+                ]
             else:
                 application.state.db = db
             await run_in_threadpool(bootstrap_indexes, application.state.db)

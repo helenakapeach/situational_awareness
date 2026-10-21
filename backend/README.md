@@ -57,7 +57,7 @@ openssl rand -hex 32
 # 将生成的值填入 backend/.env 的 APP_SESSION_SECRET。
 # SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY 使用现有 Google Auth 项目配置。
 # SUPABASE_DB_URL 填入该项目的 PostgreSQL direct/session-pooler 连接。
-# MONGODB_DATABASE 固定为 linghang_main_app_sandbox，其他目标会被拒绝。
+# MONGODB_DATABASE 默认 linghang_main_app，可按环境配置，无固定名称限制。
 # 只有使用本地 Mongo 时执行；已有 Atlas 连接时跳过。
 docker compose up -d --wait
 uv run --extra migration uvicorn app.main:create_app --factory --workers 1 --reload --port 26276

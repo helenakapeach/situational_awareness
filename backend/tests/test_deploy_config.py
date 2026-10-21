@@ -11,24 +11,25 @@ SCRIPT = Path(__file__).resolve().parents[1] / "scripts/check-sandbox-config.py"
 
 
 @pytest.mark.parametrize(
-    "change",
+    ("change", "accepted"),
     [
-        {},
-        {"MONGODB_DATABASE": "linghang_main_app"},
-        {"SUPABASE_DB_URL": ""},
-        {"MONGODB_SERVER": ""},
-        {"MONGODB_PASSWORD": ""},
-        {"MONGODB_OPTIONS": "not-json"},
+        ({}, True),
+        ({"MONGODB_DATABASE": "custom_main_app"}, True),
+        ({"MONGODB_DATABASE": ""}, False),
+        ({"SUPABASE_DB_URL": ""}, False),
+        ({"MONGODB_SERVER": ""}, False),
+        ({"MONGODB_PASSWORD": ""}, False),
+        ({"MONGODB_OPTIONS": "not-json"}, False),
     ],
 )
-def test_preflight_validates_the_file_without_printing_credentials(tmp_path, change):
+def test_preflight_validates_the_file_without_printing_credentials(tmp_path, change, accepted):
     values = {
         "MONGODB_SERVER": "mongodb://localhost:27017",
         "MONGODB_USERNAME": "readonly",
         "MONGODB_PASSWORD": "do-not-print",
         "MONGODB_APP_NAME": "linghang-main-app",
         "MONGODB_OPTIONS": '{"replicaSet":"rs0","directConnection":true}',
-        "MONGODB_DATABASE": "linghang_main_app_sandbox",
+        "MONGODB_DATABASE": "linghang_main_app",
         "APP_SESSION_SECRET": "test-only-independent-secret-1234567890",
         "SUPABASE_DB_URL": "postgresql://readonly:never-print-this@localhost:5432/postgres",
         "SUPABASE_URL": "https://identity.example.test",
@@ -45,7 +46,7 @@ def test_preflight_validates_the_file_without_printing_credentials(tmp_path, cha
         env={**os.environ, "MONGODB_DATABASE": "ambient-production-db", "SUPABASE_DB_URL": "ambient-secret"},
         check=False,
     )
-    assert result.returncode == (1 if change else 0)
+    assert result.returncode == (0 if accepted else 1)
     output = result.stdout + result.stderr
     assert "do-not-print" not in output
     assert "never-print-this" not in output

@@ -22,8 +22,10 @@ from app.auth.service import create_app_session_token
 from app.config import Settings
 
 SANDBOX_URI_ENV = "TEST_SANDBOX_MONGODB_URI"
+TEST_DATABASE = "linghang_main_app"
+CONTROL_DATABASE = f"{TEST_DATABASE}_control"
 LOCAL_MONGO_HOSTS = {"localhost", "127.0.0.1", "::1", "mongo", "mongodb"}
-GENERATION_DATABASE = re.compile(rf"{re.escape(sandbox.SANDBOX_DATABASE)}_[0-9a-f]{{32}}\Z")
+GENERATION_DATABASE = re.compile(rf"{re.escape(TEST_DATABASE)}_[0-9a-f]{{32}}\Z")
 
 
 def _generation_databases(client):
@@ -36,7 +38,7 @@ def sandbox_db():
     if not uri:
         pytest.skip(f"Set {SANDBOX_URI_ENV} to a disposable local replica set for sandbox integration tests")
 
-    # This fixture can erase the fixed sandbox database, so refuse any URI that
+    # This fixture removes local test generations, so refuse any URI that
     # points at Atlas or another non-local Mongo deployment.
     hosts = {host for host, _port in parse_uri(uri)["nodelist"]}
     if not hosts or not hosts <= LOCAL_MONGO_HOSTS:
@@ -47,19 +49,19 @@ def sandbox_db():
             client.admin.command("ping")
         except Exception as exc:
             pytest.fail(f"{SANDBOX_URI_ENV} is configured but Mongo is unavailable: {type(exc).__name__}")
-        db = client[sandbox.SANDBOX_DATABASE]
+        db = client[TEST_DATABASE]
         for name in _generation_databases(client):
             client.drop_database(name)
-        client[sandbox.CONTROL_DATABASE].startup.delete_many({})
+        client[CONTROL_DATABASE].startup.delete_many({})
         try:
             yield db
         finally:
             for name in _generation_databases(client):
                 client.drop_database(name)
-            client[sandbox.CONTROL_DATABASE].startup.delete_many({})
+            client[CONTROL_DATABASE].startup.delete_many({})
 
 
-def _settings(database=sandbox.SANDBOX_DATABASE):
+def _settings(database=TEST_DATABASE):
     return SimpleNamespace(
         mongodb_database=database,
         supabase_db_url=SecretStr("postgresql://readonly.example.test/db"),
@@ -91,10 +93,10 @@ def test_reset_publishes_fresh_database_and_removes_retired_generation(sandbox_d
     source, *_ = make_bundle(tmp_path / "source")
     _mock_export(monkeypatch, source)
     previous_generation = "a" * 32
-    previous_name = sandbox.sandbox_database_name(previous_generation)
+    previous_name = sandbox.sandbox_database_name(TEST_DATABASE, previous_generation)
     previous_db = sandbox_db.client[previous_name]
     previous_db["leftover_unmanaged_collection"].insert_one({"value": "old deployment data"})
-    sandbox_db.client[sandbox.CONTROL_DATABASE].startup.insert_one(
+    sandbox_db.client[CONTROL_DATABASE].startup.insert_one(
         {
             "_id": "startup",
             "owner": previous_generation,
@@ -104,14 +106,14 @@ def test_reset_publishes_fresh_database_and_removes_retired_generation(sandbox_d
     )
 
     generation = sandbox.reset_sandbox(sandbox_db, _settings())
-    generation_db = sandbox_db.client[sandbox.sandbox_database_name(generation)]
+    generation_db = sandbox_db.client[sandbox.sandbox_database_name(TEST_DATABASE, generation)]
 
     assert generation
     assert generation_db.posts.find_one({"id": 12})["title"] == "Hello"
     assert "leftover_unmanaged_collection" not in generation_db.list_collection_names()
     assert previous_name not in sandbox_db.client.list_database_names()
     assert sandbox.sandbox_ready(sandbox_db, generation)
-    state = sandbox_db.client[sandbox.CONTROL_DATABASE].startup.find_one({"_id": "startup"})
+    state = sandbox_db.client[CONTROL_DATABASE].startup.find_one({"_id": "startup"})
     assert state["owner"] == generation
     assert state["status"] == "ready"
     assert state["active_database"] == generation_db.name
@@ -128,13 +130,13 @@ def test_repeated_reset_discards_sandbox_writes_and_uses_latest_snapshot(sandbox
 
     monkeypatch.setattr(sandbox, "export_from_postgres", export)
     old_generation = sandbox.reset_sandbox(sandbox_db, _settings())
-    old_db = sandbox_db.client[sandbox.sandbox_database_name(old_generation)]
+    old_db = sandbox_db.client[sandbox.sandbox_database_name(TEST_DATABASE, old_generation)]
     old_db.posts.update_one({"id": 12}, {"$set": {"title": "Edited by app"}})
     old_db["runtime_cache"].insert_one({"_id": "stale"})
 
     current_source[0] = source2
     generation = sandbox.reset_sandbox(sandbox_db, _settings())
-    generation_db = sandbox_db.client[sandbox.sandbox_database_name(generation)]
+    generation_db = sandbox_db.client[sandbox.sandbox_database_name(TEST_DATABASE, generation)]
 
     assert generation_db.posts.find_one({"id": 12})["title"] == "Latest source"
     assert "runtime_cache" not in generation_db.list_collection_names()
@@ -147,7 +149,7 @@ def test_invalid_snapshot_preserves_preexisting_active_generation(sandbox_db, tm
     valid_source, *_ = make_bundle(tmp_path / "valid-source")
     _mock_export(monkeypatch, valid_source)
     previous_generation = sandbox.reset_sandbox(sandbox_db, _settings())
-    previous_db = sandbox_db.client[sandbox.sandbox_database_name(previous_generation)]
+    previous_db = sandbox_db.client[sandbox.sandbox_database_name(TEST_DATABASE, previous_generation)]
     previous_db.posts.update_one({"id": 12}, {"$set": {"title": "keep existing"}})
     previous_db["unrelated"].insert_one({"_id": "keep"})
 
@@ -161,22 +163,36 @@ def test_invalid_snapshot_preserves_preexisting_active_generation(sandbox_db, tm
     assert previous_db.posts.find_one({"id": 12})["title"] == "keep existing"
     assert previous_db.unrelated.find_one({"_id": "keep"})
     assert previous_db.name in sandbox_db.client.list_database_names()
-    state = sandbox_db.client[sandbox.CONTROL_DATABASE].startup.find_one({"_id": "startup"})
+    state = sandbox_db.client[CONTROL_DATABASE].startup.find_one({"_id": "startup"})
     assert state["status"] == "failed"
     assert state["active_database"] == previous_db.name
 
 
-def test_reset_refuses_wrong_database_without_mutating_it(sandbox_db, tmp_path, monkeypatch):
+def test_reset_uses_configured_namespace_and_does_not_remove_other_namespaces(
+    sandbox_db, tmp_path, monkeypatch
+):
     source, *_ = make_bundle(tmp_path / "source")
     _mock_export(monkeypatch, source)
-    other = sandbox_db.client["sa_should_survive"]
-    other["marker"].insert_one({"_id": "untouched"})
+    custom = sandbox_db.client["sa_custom_namespace"]
+    other_generation = sandbox.sandbox_database_name(TEST_DATABASE, "a" * 32)
+    sandbox_db.client[other_generation].marker.insert_one({"_id": "untouched"})
+    control = sandbox_db.client[f"{custom.name}_control"].startup
+    # A stale pointer to another namespace must not authorize deleting that database.
+    control.insert_one({"_id": "startup", "status": "ready", "active_database": other_generation})
     try:
-        with pytest.raises(RuntimeError, match="restricted to database"):
-            sandbox.reset_sandbox(other, _settings())
-        assert other.marker.find_one({"_id": "untouched"})
+        generation = sandbox.reset_sandbox(custom, _settings(custom.name))
+        active = sandbox.active_sandbox_database(sandbox_db.client, _settings(custom.name))
+        assert active.name == sandbox.sandbox_database_name(custom.name, generation)
+        assert active.posts.find_one({"id": 12})["title"] == "Hello"
+        assert sandbox.sandbox_ready(active, generation)
+        assert not sandbox.sandbox_ready(sandbox_db, generation)
+        assert sandbox_db.client[other_generation].marker.find_one({"_id": "untouched"})
+        assert not custom.list_collection_names()
     finally:
-        sandbox_db.client.drop_database(other.name)
+        for name in sandbox_db.client.list_database_names():
+            if sandbox._is_generation_database(name, custom.name):
+                sandbox_db.client.drop_database(name)
+        sandbox_db.client.drop_database(f"{custom.name}_control")
 
 
 def test_reset_refuses_concurrent_startup_reset(sandbox_db, tmp_path, monkeypatch):
@@ -238,7 +254,7 @@ def test_expired_owner_import_cannot_publish_or_contaminate_new_generation(sandb
     worker.start()
     try:
         assert first_import_started.wait(timeout=10)
-        state = sandbox_db.client[sandbox.CONTROL_DATABASE].startup
+        state = sandbox_db.client[CONTROL_DATABASE].startup
         state.update_one(
             {"_id": "startup"},
             {"$set": {"lease_until": datetime.now(timezone.utc) - timedelta(seconds=1)}},
@@ -251,10 +267,10 @@ def test_expired_owner_import_cannot_publish_or_contaminate_new_generation(sandb
 
     assert not worker.is_alive()
     assert len(first_result) == 1 and isinstance(first_result[0], RuntimeError)
-    state = sandbox_db.client[sandbox.CONTROL_DATABASE].startup.find_one({"_id": "startup"})
+    state = sandbox_db.client[CONTROL_DATABASE].startup.find_one({"_id": "startup"})
     assert state["owner"] == new_generation
     assert state["status"] == "ready"
-    assert state["active_database"] == sandbox.sandbox_database_name(new_generation)
+    assert state["active_database"] == sandbox.sandbox_database_name(TEST_DATABASE, new_generation)
     assert sandbox.sandbox_ready(sandbox_db, new_generation)
     assert old_database_names[0] not in sandbox_db.client.list_database_names()
     active_db = sandbox_db.client[state["active_database"]]
@@ -270,7 +286,7 @@ def test_real_source_startup_resets_data_served_by_api(
     settings = Settings(
         _env_file=None,
         **mongo_settings(os.environ[SANDBOX_URI_ENV]),
-        mongodb_database=sandbox.SANDBOX_DATABASE,
+        mongodb_database=TEST_DATABASE,
         app_session_secret=SecretStr("test-only-independent-secret-1234567890"),
         supabase_url="https://identity.example.test",
         supabase_publishable_key="test-publishable-key",
@@ -303,7 +319,7 @@ def test_real_source_startup_resets_data_served_by_api(
     try:
         with TestClient(main.create_app()) as first_api:
             first_generation = first_api.app.state.sandbox_generation
-            first_database = sandbox.sandbox_database_name(first_generation)
+            first_database = sandbox.sandbox_database_name(TEST_DATABASE, first_generation)
             first_posts = first_api.get("/api/posts", headers=headers)
             assert first_posts.status_code == 200, first_posts.text
             assert [post["title"] for post in first_posts.json()] == ["A later question", "A useful question"]
@@ -337,12 +353,12 @@ def test_default_app_startup_resets_before_bootstrap(monkeypatch):
     events = []
     settings = SimpleNamespace(
         mongodb_uri="mongodb://local",
-        mongodb_database=sandbox.SANDBOX_DATABASE,
+        mongodb_database=TEST_DATABASE,
         cors_origins=["http://localhost:5173"],
     )
 
     class FakeDb:
-        name = sandbox.SANDBOX_DATABASE
+        name = TEST_DATABASE
 
     class FakeClient:
         admin = SimpleNamespace(command=lambda command: events.append("hello") or {"setName": "rs0"})

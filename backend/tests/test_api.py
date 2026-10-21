@@ -229,7 +229,7 @@ def test_real_app_startup_connects_to_replica_set(db, monkeypatch):
     # Test the real replica-set connection without resetting a fixture database.
     # The full reset hook and its source import have dedicated sandbox integration tests.
     monkeypatch.setattr(main, "reset_sandbox", lambda *_args: "0" * 32)
-    monkeypatch.setattr(main, "sandbox_database_name", lambda _generation: db.name)
+    monkeypatch.setattr(main, "sandbox_database_name", lambda _database, _generation: db.name)
     monkeypatch.setattr(main, "sandbox_ready", lambda *_args: True)
     get_settings.cache_clear()
     with TestClient(create_app()) as production_app:

@@ -11,7 +11,7 @@ ENV_FILE (backend/.env), SECRET_ID (SERVICE_NAME-env), SERVICE_ACCOUNT,
 SYNC_SECRET (true), ENABLE_APIS (true),
 MEMORY (512Mi), CPU (1), MIN_INSTANCES (0). Maximum instances is fixed at 1.
 The env file is mounted from Secret Manager at /secrets/.env.
-Every container startup rebuilds linghang_main_app_sandbox from Supabase.
+Every container startup rebuilds the configured Mongo namespace from Supabase.
 Source DB credentials are required. The production Pages deployment is unchanged.
 No appointment Scheduler jobs are copied or changed.
 USAGE

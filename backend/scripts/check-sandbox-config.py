@@ -9,7 +9,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.config import Settings  # noqa: E402
-from app.sandbox import SANDBOX_DATABASE  # noqa: E402
 
 
 def main():
@@ -41,21 +40,19 @@ def main():
             _env_prefix="__SA_PREFLIGHT_UNUSED_",
             **{key.lower(): value for key, value in values.items()},
         )
-        if settings.mongodb_database != SANDBOX_DATABASE:
-            raise ValueError("unsafe database")
         if not settings.supabase_db_url.get_secret_value() or not settings.supabase_url:
             raise ValueError("missing source")
         if not settings.supabase_publishable_key:
             raise ValueError("missing auth")
     except Exception:
         print(
-            f"Sandbox configuration rejected: set MONGODB_DATABASE={SANDBOX_DATABASE}, SUPABASE_DB_URL, "
+            "Sandbox configuration rejected: set MONGODB_DATABASE, SUPABASE_DB_URL, "
             "SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, MONGODB_SERVER and APP_SESSION_SECRET in the env file; "
             "configure MONGODB_USERNAME and MONGODB_PASSWORD together, with MONGODB_APP_NAME and MONGODB_OPTIONS.",
             file=sys.stderr,
         )
         return 1
-    print(f"Sandbox startup configuration checked; only {SANDBOX_DATABASE}_<generation> will be reset.")
+    print(f"Startup configuration checked; import generations use {settings.mongodb_database}_<generation>.")
     return 0
 
 

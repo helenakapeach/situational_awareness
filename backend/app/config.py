@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     mongodb_password: SecretStr = SecretStr("")
     mongodb_app_name: str = "linghang-main-app"
     mongodb_options: dict[str, str | bool | int] = Field(default_factory=dict)
-    mongodb_database: str = "linghang_main_app_sandbox"
+    mongodb_database: str = "linghang_main_app"
     app_session_secret: SecretStr
     app_session_ttl_seconds: int = Field(default=3600, ge=60, le=604800)
     cors_origins: list[str] = ["http://localhost:5173"]

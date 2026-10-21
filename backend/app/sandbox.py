@@ -13,33 +13,32 @@ from pymongo.errors import DuplicateKeyError, PyMongoError
 from .migration import import_bundle, load_bundle
 from .supabase_dump import export_from_postgres
 
-SANDBOX_DATABASE = "linghang_main_app_sandbox"
-CONTROL_DATABASE = "linghang_main_app_sandbox_control"
 LEASE_SECONDS = 90
 logger = logging.getLogger(__name__)
 
 
-def _state(db):
+def _state(db, database_name=None):
     # Kept outside the database being wiped so resets cannot delete their lease.
-    return db.client[CONTROL_DATABASE].startup
+    return db.client[f"{database_name or db.name}_control"].startup
 
 
-def sandbox_database_name(generation: str) -> str:
+def sandbox_database_name(database_name: str, generation: str) -> str:
     if not re.fullmatch(r"[0-9a-f]{32}", generation):
         raise ValueError("Invalid sandbox generation")
-    return f"{SANDBOX_DATABASE}_{generation}"
+    return f"{database_name}_{generation}"
 
 
-def _is_generation_database(name):
-    return isinstance(name, str) and bool(re.fullmatch(rf"{SANDBOX_DATABASE}_[0-9a-f]{{32}}", name))
+def _is_generation_database(name, database_name):
+    return isinstance(name, str) and bool(re.fullmatch(rf"{re.escape(database_name)}_[0-9a-f]{{32}}", name))
 
 
 def active_sandbox_database(client, settings):
     """Resolve the ready sandbox for operator commands without ever seeding another database."""
-    if settings.mongodb_database != SANDBOX_DATABASE:
-        raise RuntimeError("Operator commands are restricted to the Mongo sandbox")
-    state = _state(client[SANDBOX_DATABASE]).find_one({"_id": "startup", "status": "ready"})
-    if not state or state.get("active_database") != sandbox_database_name(state.get("owner", "")):
+    database_name = settings.mongodb_database
+    state = _state(client[database_name]).find_one({"_id": "startup", "status": "ready"})
+    if not state or state.get("active_database") != sandbox_database_name(
+        database_name, state.get("owner", "")
+    ):
         raise RuntimeError("Start the sandbox API and wait for its import to finish first")
     return client[state["active_database"]]
 
@@ -47,7 +46,10 @@ def active_sandbox_database(client, settings):
 def sandbox_ready(db, generation: str) -> bool:
     """Retire old instances as soon as another process starts rebuilding the sandbox."""
     try:
-        return bool(_state(db).find_one({"_id": "startup", "owner": generation, "status": "ready"}))
+        database_name = db.name.removesuffix(f"_{generation}")
+        return bool(
+            _state(db, database_name).find_one({"_id": "startup", "owner": generation, "status": "ready"})
+        )
     except PyMongoError:
         return False
 
@@ -139,10 +141,8 @@ def reset_sandbox(db, settings) -> str:
 
     Unique physical databases isolate late requests and expired reset owners.
     Publication is fenced by the lease owner. Only retired generation databases
-    can be dropped; production/base database names cannot pass that guard.
+    in the configured namespace can be dropped; base database names cannot pass that guard.
     """
-    if db.name != SANDBOX_DATABASE or settings.mongodb_database != SANDBOX_DATABASE:
-        raise RuntimeError(f"Startup reset is restricted to database {SANDBOX_DATABASE}")
     source = settings.supabase_db_url.get_secret_value()
     if not source:
         raise RuntimeError("SUPABASE_DB_URL is required to rebuild the Mongo sandbox at startup")
@@ -160,7 +160,7 @@ def reset_sandbox(db, settings) -> str:
             )
             bundle = load_bundle(snapshot)
             lease.check()
-            candidate = sandbox_database_name(lease.owner)
+            candidate = sandbox_database_name(db.name, lease.owner)
             # Never reuse an existing physical database, even on an improbable UUID collision.
             if candidate in db.client.list_database_names():
                 raise RuntimeError("Sandbox generation already exists")
@@ -169,7 +169,7 @@ def reset_sandbox(db, settings) -> str:
             import_bundle(db.client[target], bundle, apply=True)
             previous = lease.ready(bundle.manifest["snapshot_id"], target)
             published = True
-            if _is_generation_database(previous) and previous != target:
+            if _is_generation_database(previous, db.name) and previous != target:
                 try:
                     db.client.drop_database(previous)
                 except PyMongoError:

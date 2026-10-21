@@ -43,6 +43,7 @@ def test_local_mongo_can_connect_without_credentials():
         mongodb_options={"replicaSet": "rs0", "directConnection": True},
     )
     uri = urlsplit(settings.mongodb_uri)
+    assert settings.mongodb_database == "linghang_main_app"
     assert uri.username is None
     assert parse_qs(uri.query)["directConnection"] == ["true"]
 

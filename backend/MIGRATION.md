@@ -22,13 +22,13 @@ Supabase 仍负责生产数据和 Google 身份验证。API 每次启动时，`a
 
 ## 校验、导入与恢复
 
-导入前会校验 manifest、行数与校验和、ID 唯一性、字段类型、表间引用、同一帖子下的回复关系、头像文件完整性和 sequence 边界。只有校验完整的快照才会导入到名称匹配 `linghang_main_app_sandbox_<random-generation>` 的全新空数据库。导入后会再次核对记录、头像哈希和计数器边界。
+导入前会校验 manifest、行数与校验和、ID 唯一性、字段类型、表间引用、同一帖子下的回复关系、头像文件完整性和 sequence 边界。只有校验完整的快照才会导入到名称匹配 `${MONGODB_DATABASE}_<random-generation>`（默认 `linghang_main_app_<random-generation>`） 的全新空数据库。导入后会再次核对记录、头像哈希和计数器边界。
 
 导入标记记录 `in_progress` 或 `complete` 状态。未完成的代次不会对请求开放；失败的导入会尽力删除，进程被强制终止时可能留下未服务的代次，但它不能被当作已就绪数据。启动租约、单一发布步骤和精确沙箱名称检查可阻止旧实例或过期导入器发布内容。每次重启会创建新代次并丢弃旧沙箱数据；应用不会把写入同步回 Supabase。
 
-手动部署前，在私有的 `backend/.env` 中按 [backend/.env.example](./.env.example) 配置 Supabase 来源、独立应用密钥和拆分后的 Mongo 连接字段。Mongo 字段为 `MONGODB_SERVER`、`MONGODB_USERNAME`、`MONGODB_PASSWORD`、`MONGODB_APP_NAME`、`MONGODB_OPTIONS`，数据库名固定为 `MONGODB_DATABASE=linghang_main_app_sandbox`。`SUPABASE_DB_URL` 需要读取九张业务表、被引用的 `auth.users` 身份列、`storage.objects` 元数据和 identity sequence；可用时应采用只读角色。公开的 Supabase 浏览器密钥不能替代数据库连接。当前公开头像可直接通过 GET 获取；只有需要认证式 Storage 下载时才配置服务端 `SUPABASE_SERVICE_ROLE_KEY`，绝不可放入 `VITE_` 变量。
+手动部署前，在私有的 `backend/.env` 中按 [backend/.env.example](./.env.example) 配置 Supabase 来源、独立应用密钥和拆分后的 Mongo 连接字段。Mongo 字段为 `MONGODB_SERVER`、`MONGODB_USERNAME`、`MONGODB_PASSWORD`、`MONGODB_APP_NAME`、`MONGODB_OPTIONS`，数据库命名空间默认 `MONGODB_DATABASE=linghang_main_app`，可按环境配置，无固定名称限制。`SUPABASE_DB_URL` 需要读取九张业务表、被引用的 `auth.users` 身份列、`storage.objects` 元数据和 identity sequence；可用时应采用只读角色。公开的 Supabase 浏览器密钥不能替代数据库连接。当前公开头像可直接通过 GET 获取；只有需要认证式 Storage 下载时才配置服务端 `SUPABASE_SERVICE_ROLE_KEY`，绝不可放入 `VITE_` 变量。
 
-部署检查脚本 `backend/scripts/check-sandbox-config.py` 会在部署前拒绝缺失来源配置或错误的 Mongo 命名空间。`backend/scripts/sync-secret.sh` 与 `backend/scripts/deploy-cloud-run.sh` 分别同步独立的 Secret Manager 配置并部署服务。凭据只存放在私有环境文件和专用 Secret Manager secret 中，不写入 Git 或前端变量。复用现有 Mongo 集群时，业务数据仍隔离在 `linghang_main_app_sandbox_*` 命名空间内。
+部署检查脚本 `backend/scripts/check-sandbox-config.py` 会在部署前拒绝缺失的必需配置或无效的 Mongo 连接字段。`backend/scripts/sync-secret.sh` 与 `backend/scripts/deploy-cloud-run.sh` 分别同步独立的 Secret Manager 配置并部署服务。凭据只存放在私有环境文件和专用 Secret Manager secret 中，不写入 Git 或前端变量。复用现有 Mongo 集群时，业务数据仍隔离在 配置的 `${MONGODB_DATABASE}_*` 命名空间内。
 
 ## 验证
 
