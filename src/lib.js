@@ -315,7 +315,7 @@ export function validLinkedInUrl(value) {
   return LINKEDIN_URL.test(normalizeText(value))
 }
 
-function normalizeLinkedInUrl(value) {
+export function normalizeLinkedInUrl(value) {
   const text = normalizeText(value)
   if (!text) return ''
   return `https://${text.replace(/^https?:\/\//i, '')}`
