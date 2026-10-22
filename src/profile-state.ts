@@ -1,6 +1,6 @@
-import type { Profile } from './types.ts'
+import type { OwnProfile, ProfileFormInput, ProfileForDisplay } from './types.ts'
 
-export type ProfileDraft = Partial<Omit<Profile, 'cohort_id' | 'graduation_year'>> & { cohort_id?: number | string | null; graduation_year?: number | string | null }
+export type ProfileDraft = Partial<ProfileFormInput>
 
 export interface ProfileViewState {
   editing: boolean
@@ -47,13 +47,15 @@ export function selectProfileTab(state: ProfileViewState, tab: string, draft: Pr
   }
 }
 
-export function profileForPresentation(savedProfile: Profile, state: ProfileViewState): Profile {
+export function profileForPresentation(savedProfile: OwnProfile, state: ProfileViewState): ProfileForDisplay {
   return state.editing && state.draft
     ? { ...savedProfile, ...state.draft }
     : savedProfile
 }
 
-export function visibleProfileContacts(profile: Partial<Profile>, includePrivate = false) {
+type ContactProfile = Pick<OwnProfile, 'linkedin_url' | 'linkedin_public' | 'contact_email' | 'email_public' | 'wechat_id' | 'wechat_public'>
+
+export function visibleProfileContacts(profile: Partial<ContactProfile>, includePrivate = false) {
   return [
     { key: 'linkedin_url', icon: 'linkedin', label: 'LinkedIn', value: profile.linkedin_url, isPublic: profile.linkedin_public },
     { key: 'contact_email', icon: 'mail', label: '联系邮箱', value: profile.contact_email, isPublic: profile.email_public },

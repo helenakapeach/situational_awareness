@@ -34,7 +34,7 @@ test('exchanges Supabase session lazily and sends the app JWT on API requests', 
     fetchImpl: async (url, init) => {
       calls.push({ url, init })
       return url.endsWith('/api/auth/session')
-        ? jsonResponse({ accessToken: 'app-jwt', tokenType: 'bearer', expiresIn: 600, user: { id: 'u1', email: 'a@b.test', user_metadata: { name: 'A' } } })
+        ? jsonResponse({ accessToken: 'app-jwt', tokenType: 'Bearer', expiresIn: 600, user: { id: 'u1', email: 'a@b.test', user_metadata: { name: 'A' } } })
         : jsonResponse({ is_member: true })
     },
   })
@@ -44,7 +44,7 @@ test('exchanges Supabase session lazily and sends the app JWT on API requests', 
   assert.equal(session?.app_access_token, 'app-jwt')
   assert.deepEqual(await backend.memberAccess(), { is_member: true })
   assert.equal(calls.filter((call) => call.url.endsWith('/api/auth/session')).length, 1)
-  assert.equal(calls[1]?.init.headers.get('Authorization'), 'Bearer app-jwt')
+  assert.equal(new Headers(calls[1]?.init.headers).get('Authorization'), 'Bearer app-jwt')
 })
 
 test('maps API methods and sends avatar bytes with the expected content type', async () => {
@@ -52,7 +52,7 @@ test('maps API methods and sends avatar bytes with the expected content type', a
   const backend = createHttpBackend({
     baseUrl: 'http://api.test', auth: authStub({ access_token: 'supabase', user: { id: 'u1' } }).auth,
     fetchImpl: async (url, init) => {
-      if (url.endsWith('/api/auth/session')) return jsonResponse({ accessToken: 'app-jwt', expiresIn: 600, user: { id: 'u1' } })
+      if (url.endsWith('/api/auth/session')) return jsonResponse({ accessToken: 'app-jwt', tokenType: 'Bearer', expiresIn: 600, user: { id: 'u1', email: 'a@b.test', user_metadata: {} } })
       calls.push({ url, init })
       return jsonResponse({ ok: true })
     },
@@ -61,13 +61,15 @@ test('maps API methods and sends avatar bytes with the expected content type', a
   await backend.updateReply('reply/3', 'updated')
   const blob = new Blob(['webp'])
   await backend.uploadAvatar(blob)
+  await backend.getPost('post/42')
 
   assert.equal(calls[0].url, 'http://api.test/api/posts?before=2026-10-01T00%3A00%3A00Z&before_id=42')
   assert.equal(calls[1].url, 'http://api.test/api/replies/reply%2F3')
   assert.deepEqual(JSON.parse(String(calls[1]?.init.body)), { body: 'updated' })
   assert.equal(calls[2].url, 'http://api.test/api/profile/avatar')
-  assert.equal(calls[2]?.init.headers.get('Content-Type'), 'image/webp')
+  assert.equal(new Headers(calls[2]?.init.headers).get('Content-Type'), 'image/webp')
   assert.equal(calls[2]?.init.body, blob)
+  assert.equal(calls[3]?.url, 'http://api.test/api/posts/post%2F42')
 })
 
 test('search and my content use only authenticated Mongo API routes with safe query encoding', async () => {
@@ -77,7 +79,7 @@ test('search and my content use only authenticated Mongo API routes with safe qu
   const backend = createHttpBackend({
     baseUrl: 'https://api.test', auth: authStub({ access_token: 'supabase', user: { id: 'u1' } }).auth,
     fetchImpl: async (url, init) => {
-      if (url.endsWith('/api/auth/session')) return jsonResponse({ accessToken: 'app-jwt', expiresIn: 600, user: { id: 'u1' } })
+      if (url.endsWith('/api/auth/session')) return jsonResponse({ accessToken: 'app-jwt', tokenType: 'Bearer', expiresIn: 600, user: { id: 'u1', email: 'a@b.test', user_metadata: {} } })
       calls.push({ url, init })
       return jsonResponse(url.includes('/api/posts/search?') ? posts : mine)
     },
@@ -88,7 +90,7 @@ test('search and my content use only authenticated Mongo API routes with safe qu
   assert.equal(new URL(calls[0].url).pathname, '/api/posts/search')
   assert.deepEqual([...new URL(calls[0].url).searchParams], [['q', term]])
   assert.equal(calls[1].url, 'https://api.test/api/me/content')
-  assert.ok(calls.every(({ init }) => init.headers.get('Authorization') === 'Bearer app-jwt'))
+  assert.ok(calls.every(({ init }) => new Headers(init.headers).get('Authorization') === 'Bearer app-jwt'))
 })
 
 test('auth changes exchange before notifying the app and handle token changes', async () => {
@@ -99,7 +101,7 @@ test('auth changes exchange before notifying the app and handle token changes', 
     fetchImpl: async (_url, init) => {
       const token = JSON.parse(String(init.body)).access_token
       exchanges.push(token)
-      return jsonResponse({ accessToken: `jwt-${token}`, expiresIn: 600, user: { id: 'u1' } })
+      return jsonResponse({ accessToken: `jwt-${token}`, tokenType: 'Bearer', expiresIn: 600, user: { id: 'u1', email: 'a@b.test', user_metadata: {} } })
     },
   })
   const observed: Array<string | null> = []
@@ -130,7 +132,7 @@ test('late exchange cannot restore a session after sign out', async () => {
   await new Promise((resolve) => setTimeout(resolve, 5))
   await backend.signOut()
   await new Promise((resolve) => setTimeout(resolve, 5))
-  pending.resolve(jsonResponse({ accessToken: 'old-jwt', expiresIn: 600, user: { id: 'u1' } }))
+  pending.resolve(jsonResponse({ accessToken: 'old-jwt', tokenType: 'Bearer', expiresIn: 600, user: { id: 'u1', email: 'a@b.test', user_metadata: {} } }))
   await new Promise((resolve) => setTimeout(resolve, 0))
 
   assert.deepEqual(observed, [null])
@@ -161,9 +163,9 @@ test('old pending mutation is canceled after switching to another auth session',
   await new Promise((resolve) => setTimeout(resolve, 5))
   supabase.auth.emit('SIGNED_IN', { access_token: 'new-user', user: { id: 'new' } })
   await new Promise((resolve) => setTimeout(resolve, 5))
-  newExchange.resolve(jsonResponse({ accessToken: 'new-user-jwt', expiresIn: 600, user: { id: 'new' } }))
+  newExchange.resolve(jsonResponse({ accessToken: 'new-user-jwt', tokenType: 'Bearer', expiresIn: 600, user: { id: 'new', email: 'new@b.test', user_metadata: {} } }))
   await new Promise((resolve) => setTimeout(resolve, 0))
-  oldExchange.resolve(jsonResponse({ accessToken: 'old-user-jwt', expiresIn: 600, user: { id: 'old' } }))
+  oldExchange.resolve(jsonResponse({ accessToken: 'old-user-jwt', tokenType: 'Bearer', expiresIn: 600, user: { id: 'old', email: 'old@b.test', user_metadata: {} } }))
 
   await oldMutationRejection
   assert.deepEqual(dataRequests, [])
@@ -207,9 +209,9 @@ test('out of order auth exchanges only publish the newest token session', async 
   await new Promise((resolve) => setTimeout(resolve, 5))
   supabase.auth.emit('TOKEN_REFRESHED', { access_token: 'second', user: { id: 'u1' } })
   await new Promise((resolve) => setTimeout(resolve, 5))
-  second.resolve(jsonResponse({ accessToken: 'jwt-second', expiresIn: 600, user: { id: 'u1' } }))
+  second.resolve(jsonResponse({ accessToken: 'jwt-second', tokenType: 'Bearer', expiresIn: 600, user: { id: 'u1', email: 'a@b.test', user_metadata: {} } }))
   await new Promise((resolve) => setTimeout(resolve, 0))
-  first.resolve(jsonResponse({ accessToken: 'jwt-first', expiresIn: 600, user: { id: 'u1' } }))
+  first.resolve(jsonResponse({ accessToken: 'jwt-first', tokenType: 'Bearer', expiresIn: 600, user: { id: 'u1', email: 'a@b.test', user_metadata: {} } }))
   await new Promise((resolve) => setTimeout(resolve, 0))
 
   assert.deepEqual(observed, ['jwt-second'])
@@ -221,7 +223,7 @@ test('renews the app token when its returned lifetime expires', async () => {
   let exchanges = 0
   const backend = createHttpBackend({
     baseUrl: 'http://api.test', auth: supabase.auth,
-    fetchImpl: async () => jsonResponse({ accessToken: `jwt-${++exchanges}`, expiresIn: 1, user: { id: 'u1' } }),
+    fetchImpl: async () => jsonResponse({ accessToken: `jwt-${++exchanges}`, tokenType: 'Bearer', expiresIn: 1, user: { id: 'u1', email: 'a@b.test', user_metadata: {} } }),
   })
   const originalNow = Date.now
   let now = 1_000_000
@@ -245,7 +247,7 @@ test('unsubscribe suppresses a pending auth callback', async () => {
   supabase.auth.emit('SIGNED_IN', { access_token: 'token', user: { id: 'u1' } })
   await new Promise((resolve) => setTimeout(resolve, 5))
   unsubscribe()
-  pending.resolve(jsonResponse({ accessToken: 'jwt', expiresIn: 600, user: { id: 'u1' } }))
+  pending.resolve(jsonResponse({ accessToken: 'jwt', tokenType: 'Bearer', expiresIn: 600, user: { id: 'u1', email: 'a@b.test', user_metadata: {} } }))
   await new Promise((resolve) => setTimeout(resolve, 0))
   assert.deepEqual(observed, [])
 })
@@ -254,7 +256,7 @@ test('surfaces API errors with FastAPI detail', async () => {
   const backend = createHttpBackend({
     baseUrl: 'http://api.test', auth: authStub({ access_token: 'token', user: { id: 'u1' } }).auth,
     fetchImpl: async (url) => url.endsWith('/api/auth/session')
-      ? jsonResponse({ accessToken: 'jwt', expiresIn: 600, user: { id: 'u1' } })
+      ? jsonResponse({ accessToken: 'jwt', tokenType: 'Bearer', expiresIn: 600, user: { id: 'u1', email: 'a@b.test', user_metadata: {} } })
       : jsonResponse({ detail: 'forbidden' }, 403),
   })
   await assert.rejects(backend.getOwnProfile(), /forbidden/)

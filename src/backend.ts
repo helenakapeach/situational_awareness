@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { LIMITS, normalizeInviteCode, postIdFromSearch, postUrl, replyIsFromOp, sortReplies, withVoteState } from './lib.ts'
 import { createHttpBackend } from './http-backend.ts'
-import type { Backend, Post, PostSummary, Profile, ProfileCard, Reply, ReplySummary } from './types.ts'
+import type { AdminBackend, Backend, DemoBackend, HttpBackend, LikedPost, LikedReply, Post, Profile, ProfileCard, ProfileUpdateRequest, Reply } from './types.ts'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 const DEMO_STORAGE_KEY = 'situational-awareness-demo-v9'
@@ -11,10 +11,6 @@ const DEMO_INVITE_CODE = 'DEMO2026'
 const DEMO_PROFILE_KEY = 'situational-awareness-demo-profile'
 const SANDBOX_API_BASE_URL = 'https://linghang-main-app-6p5bfe4xaa-ue.a.run.app'
 const POST_COLUMNS = 'id,author_name,author_avatar_url,author_public_id,author_role,author_cohort_name,author_role_verified,is_anonymous,title,body,created_at,updated_at,upvote_count,post_votes(post_id)'
-
-function oneRelation<T>(relation: T | T[] | null | undefined): T | null {
-  return Array.isArray(relation) ? relation[0] ?? null : relation ?? null
-}
 
 const DEMO_COHORTS = [
   { id: 1, name: '创业' },
@@ -72,7 +68,7 @@ function defaultDemoProfile() {
   }
 }
 
-const DEMO_DIRECTORY: Record<string, Profile> = {
+const DEMO_DIRECTORY: Record<string, Partial<Profile> & Pick<Profile, 'public_id' | 'display_name'>> = {
   'seed-c': {
     public_id: 'seed-c',
     display_name: '林然',
@@ -106,7 +102,7 @@ const DEMO_DIRECTORY: Record<string, Profile> = {
   },
 }
 
-function publicProfileCard(profile: Profile, isSelf: boolean): ProfileCard {
+function publicProfileCard(profile: Partial<Profile> & Pick<Profile, 'public_id' | 'display_name'>, isSelf: boolean): ProfileCard {
   const card: ProfileCard = {
     public_id: profile.public_id,
     display_name: profile.display_name,
@@ -346,7 +342,7 @@ export function createBackend(): Backend {
   return createSupabaseBackend({ supabase, url })
 }
 
-export function createSupabaseBackend({ supabase, url }: { supabase: SupabaseClient; url: string }): Backend {
+export function createSupabaseBackend({ supabase, url }: { supabase: SupabaseClient; url: string }): AdminBackend {
   // Ownership comes from a scoped RPC, without exposing author_id or
   // requiring SELECT on the whole row for a PostgREST computed field.
     async function hydratePosts(posts: RawPost[]) {
@@ -454,7 +450,7 @@ export function createSupabaseBackend({ supabase, url }: { supabase: SupabaseCli
     async getProfile(publicId) {
       const { data, error } = await supabase.rpc('get_profile', { p_public_id: publicId })
       if (error) throw error
-      return data as Profile | null
+      return data as ProfileCard | null
     },
 
     async listCohorts() {
@@ -510,7 +506,7 @@ export function createSupabaseBackend({ supabase, url }: { supabase: SupabaseCli
 
     // 游标用 created_at 而不是 offset：翻页过程中有人发帖也不会让某一条
     // 被挤到下一页而漏掉，或者重复出现一次。
-    async listPosts({ before = null, before_id = null } = {}) {
+    async listPosts({ before = null } = {}) {
       let query = supabase
         .from('posts')
         .select(POST_COLUMNS)
@@ -561,20 +557,16 @@ export function createSupabaseBackend({ supabase, url }: { supabase: SupabaseCli
       if (replyError) throw replyError
 
       const byNewest = (left: { created_at: string }, right: { created_at: string }) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime()
+      const postRows = (postVotes || []) as unknown as Array<{ posts: LikedPost | null }>
+      type ReplyVote = Omit<LikedReply, 'post_title'> & { posts: { id: number | string; title: string } | null }
+      const replyRows = (replyVotes || []) as unknown as Array<{ replies: ReplyVote | null }>
+      const likedPosts = postRows.map((vote) => vote.posts).filter(Boolean) as LikedPost[]
       return {
-        posts: (postVotes || []).flatMap((vote) => {
-          const post = oneRelation(vote.posts)
-          return post ? [post as PostSummary] : []
-        }).sort(byNewest),
-        replies: (replyVotes || [])
-          .flatMap((vote) => {
-            const reply = oneRelation(vote.replies)
-            if (!reply) return []
-            const relatedPost = oneRelation(reply.posts)
-            if (!relatedPost) return []
-            const { posts: _posts, ...replySummary } = reply
-            return [{ ...replySummary, post_title: relatedPost.title } as ReplySummary]
-          })
+        posts: likedPosts.sort(byNewest),
+        replies: replyRows
+          .map((vote) => vote.replies)
+          .filter((reply): reply is ReplyVote & { posts: { id: number | string; title: string } } => Boolean(reply?.posts))
+          .map(({ posts, ...reply }) => ({ ...reply, post_title: posts.title }))
           .sort(byNewest),
       }
     },
@@ -689,7 +681,7 @@ function shapePosts(data: DemoData, posts: DemoPost[]): Post[] {
   })
 }
 
-function createDemoBackend(): Backend {
+function createDemoBackend(): DemoBackend {
   const listeners = new Set<(session: import('./types.ts').AppSession | null) => void>()
 
 function readData(): DemoData {
@@ -775,11 +767,6 @@ function readData(): DemoData {
       return { is_member: window.localStorage.getItem(DEMO_MEMBER_KEY) === '1', is_admin: false, is_disabled: false }
     },
 
-    async adminMembers() { return [] },
-    async adminSetDisabled() { throw new Error('Admin actions are unavailable in demo mode.') },
-    async adminDeleteContent() { throw new Error('Admin actions are unavailable in demo mode.') },
-    async adminSetRoleVerified() { throw new Error('Admin actions are unavailable in demo mode.') },
-
     async isMember() {
       return window.localStorage.getItem(DEMO_MEMBER_KEY) === '1'
     },
@@ -795,7 +782,7 @@ function readData(): DemoData {
     },
 
     async getProfile(publicId) {
-      if (publicId === 'demo-user') return publicProfileCard(readProfile(), true)
+      if (publicId === 'demo-user') return publicProfileCard(await this.getOwnProfile() as Profile, true)
       const profile = DEMO_DIRECTORY[publicId]
       return profile ? publicProfileCard(profile, false) : null
     },
@@ -828,7 +815,7 @@ function readData(): DemoData {
       return saveProfile({ ...readProfile(), avatar_url: '' })
     },
 
-    async listPosts({ before = null, before_id = null } = {}) {
+    async listPosts({ before = null } = {}) {
       const data = readData()
       const cutoff = before ? new Date(before).getTime() : null
 
@@ -866,7 +853,6 @@ function readData(): DemoData {
           .map((post) => ({
             id: post.id,
             title: post.title,
-            author_name: post.author_name,
             created_at: post.created_at,
             is_anonymous: post.is_anonymous !== false,
           }))
@@ -879,7 +865,6 @@ function readData(): DemoData {
             body: reply.body,
             created_at: reply.created_at,
             is_anonymous: Boolean(reply.is_anonymous),
-            author_name: reply.author_name,
             post_title: data.posts.find((post) => String(post.id) === String(reply.post_id))?.title || '这条讨论',
           }))
           .sort(byNewest),

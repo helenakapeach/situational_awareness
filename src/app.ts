@@ -1,4 +1,4 @@
-import type { AppSession, Cohort, Post, Profile, Reply } from './types.ts'
+import type { AppSession, Cohort, Post, Profile, ProfileCard, ProfileForDisplay, Reply } from './types.ts'
 import './styles.css'
 import { createBackend } from './backend.ts'
 import {
@@ -54,10 +54,19 @@ import { renderMarkdown } from './markdown.ts'
 
 const backend: import('./types.ts').Backend = createBackend()
 
+function adminBackend(): import('./types.ts').AdminBackend {
+  if (backend.isDemo) throw new Error('Admin actions are unavailable in demo mode.')
+  return backend
+}
+
 function query<T extends Element = HTMLElement>(selector: string): T {
   const element = document.querySelector<T>(selector)
   if (!element) throw new Error(`Required page element was not found: ${selector}`)
   return element
+}
+
+function queryOptional<T extends Element = HTMLElement>(selector: string): T | null {
+  return document.querySelector<T>(selector)
 }
 
 function queryAll<T extends Element = HTMLElement>(selector: string): NodeListOf<T> {
@@ -777,7 +786,7 @@ function makeReplyToolbar(reply: Reply, { onEdit, respond }: { onEdit: () => voi
 
     setButtonBusy(remove, true, '删除中…')
     try {
-      if (isAdmin) await backend.adminDeleteContent(reply.id, 'reply')
+      if (isAdmin) await adminBackend().adminDeleteContent(reply.id, 'reply')
       else await backend.deleteReply(reply.id)
       editDrafts.delete(String(reply.id))
       replyDrafts.delete(`${reply.post_id}:${reply.id}`)
@@ -1343,7 +1352,7 @@ function makePost(post: Post, shouldOpen = false, { detail = false }: { detail?:
 
       setButtonBusy(remove, true, '删除中…')
       try {
-        if (isAdmin) await backend.adminDeleteContent(post.id, 'post')
+        if (isAdmin) await adminBackend().adminDeleteContent(post.id, 'post')
         else await backend.deletePost(post.id)
         forgetPostDrafts(post)
         if (targetPostId() === String(post.id)) setTargetPostUrl(null)
@@ -2169,7 +2178,7 @@ async function loadAdminMembers() {
   const list = query<HTMLElement>('#admin-members')
   list.textContent = '加载中…'
   try {
-    const members = await backend.adminMembers()
+    const members = await adminBackend().adminMembers()
     list.replaceChildren()
     for (const member of members) {
       const row = element('div', 'admin-member')
@@ -2187,7 +2196,7 @@ async function loadAdminMembers() {
         verify.addEventListener('click', async () => {
           setButtonBusy(verify, true, '保存中…')
           try {
-            await backend.adminSetRoleVerified(member.user_id || member.id, !member.role_verified)
+            await adminBackend().adminSetRoleVerified(member.user_id, !member.role_verified)
             await loadAdminMembers()
             showToast(member.role_verified ? '已取消认证。' : '已认证这个角色。')
           } catch (error) {
@@ -2204,7 +2213,7 @@ async function loadAdminMembers() {
           if (!await confirmAction({ title: member.is_disabled ? '恢复这个账号？' : '停用这个账号？', body: `${member.name || '成员'}（${member.email || ''}）${member.is_disabled ? '将重新获得社区访问权限。' : '将无法访问社区、发帖、回复或点赞。已有内容会保留。'}`, confirmLabel: member.is_disabled ? '恢复' : '停用' })) return
           setButtonBusy(button, true, '保存中…')
           try {
-            await backend.adminSetDisabled(member.user_id || member.id, !member.is_disabled)
+            await adminBackend().adminSetDisabled(member.user_id, !member.is_disabled)
             await loadAdminMembers()
             showToast('账号状态已更新。')
           } catch (error) { showToast(friendlyError(error), 'error'); setButtonBusy(button, false) }
@@ -2259,7 +2268,7 @@ function selectInput(id: string, options: Array<[string, string]>, value: string
   return select
 }
 
-function profileAvatarBlock(profile: Profile) {
+function profileAvatarBlock(profile: Pick<ProfileForDisplay, 'display_name' | 'avatar_url'>) {
   const block = element('div', 'profile-avatar-block')
   const host = element('div')
   host.id = 'profile-avatar-host'
@@ -2327,7 +2336,7 @@ function makeContactChip(tag: 'a' | 'button', icon: ContactIcon, label: string, 
   return chip
 }
 
-function appendPublicContacts(list: HTMLElement, profile: Profile) {
+function appendPublicContacts(list: HTMLElement, profile: Profile | ProfileCard) {
   if (profile.linkedin_url && validLinkedInUrl(profile.linkedin_url)) {
     const link = makeContactChip('a', 'linkedin', 'LinkedIn 主页') as HTMLAnchorElement
     link.href = profile.linkedin_url
@@ -2355,7 +2364,7 @@ function appendPublicContacts(list: HTMLElement, profile: Profile) {
   }
 }
 
-function buildProfileSummary(profile: Profile) {
+function buildProfileSummary(profile: ProfileCard) {
   const card = element('div', 'profile-summary')
   const head = element('div', 'profile-head')
   const identity = element('div', 'profile-identity')
@@ -2381,7 +2390,7 @@ function buildProfileSummary(profile: Profile) {
   return card
 }
 
-function profileContactRows(profile: Profile, includePrivate = false) {
+function profileContactRows(profile: Profile | ProfileForDisplay, includePrivate = false) {
   const rows = element('div', 'profile-contact-rows')
   const contacts = visibleProfileContacts(profile, includePrivate)
   for (const { icon, label, value, isPublic, key } of contacts) {
@@ -2410,7 +2419,7 @@ function profileContactRows(profile: Profile, includePrivate = false) {
   return rows
 }
 
-function profileHero(profile: Profile) {
+function profileHero(profile: Profile | ProfileForDisplay) {
   const hero = element('header', 'profile-hero')
   const identity = element('div', 'profile-hero-identity')
   const name = element('h1', 'profile-name', profile.display_name || '成员')
@@ -2442,7 +2451,7 @@ function buildProfileTabs() {
       const visibility = profileTabVisibility(profileViewState)
       query('#panel-me').classList.toggle('profile-discussions-active', visibility.showDiscussions)
       query('#panel-me').classList.toggle('profile-profile-active', visibility.showProfile)
-      query('#profile-panel .profile-tabs')?.replaceWith(buildProfileTabs())
+      queryOptional('#profile-panel .profile-tabs')?.replaceWith(buildProfileTabs())
     })
     tabs.append(button)
   }
@@ -2493,7 +2502,7 @@ function profileSectionHeading(title: string, actionLabel: string | null, onActi
   return heading
 }
 
-function buildProfileView(profile: Profile, memberPreview = false) {
+function buildProfileView(profile: Profile | ProfileForDisplay, memberPreview = false) {
   const card = element('div', memberPreview ? 'profile-page is-member-preview' : 'profile-page')
   const toolbar = element('div', 'profile-toolbar')
   if (memberPreview) {
@@ -2753,9 +2762,9 @@ async function profileChanged(profile: Profile, message: string) {
 
 // Patch the avatar in place so unsaved text in the form survives the upload.
 async function avatarChanged(profile: Profile, message: string) {
-  query('#profile-avatar-host')
+  queryOptional('#profile-avatar-host')
     ?.replaceChildren(makeAvatar(profile.display_name, profile.avatar_url))
-  const clear = query('#clear-avatar-button')
+  const clear = queryOptional<HTMLButtonElement>('#clear-avatar-button')
   if (clear) clear.hidden = !isUploadedAvatar(profile.avatar_url)
   await profileChanged(profile, message)
 }

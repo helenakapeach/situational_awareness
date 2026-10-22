@@ -3,7 +3,7 @@
 这是独立的 **uv + FastAPI + Pydantic + MongoDB** 非生产环境。Supabase 仍负责生产数据库和 Google Auth。普通页面访问继续使用现有 Supabase adapter，即使已配置 API 地址也不会切换；只有 `?backend=mongo` 才会选择临时 Mongo 沙箱。
 
 ```text
-UI → src/http-backend.js → 组件 router → 组件 service → MongoDB
+UI → src/http-backend.ts → 组件 router → 组件 service → MongoDB
 Google/Supabase Auth → 验证身份交换 → 独立的应用 JWT
 ```
 
@@ -143,7 +143,7 @@ Mongo 集成测试使用随机命名的 `sa_test_*` 数据库，并在结束后�
 
 通知、已读标记、里程碑和草稿沿用现有浏览器行为。搜索会查询 Mongo 的所有帖子，返回标题/正文中最新的 50 条字面子串匹配，并补齐回复、投票和所有权状态。`listMine` 最多返回调用者的 100 条帖子和 100 条回复，包括匿名内容，但不暴露作者 ID。这两项操作要求成员有效，并与新增 Supabase `search_posts` / `my_content` RPC 行为一致。`getPost` API 可供直接客户端使用；UI 在两种后端仍沿用现有深链导航。SQL RPC `own_content_ids`、`op_reply_ids` 及 profile identity trigger 的规则由服务层实现。
 
-Supabase 前端数据 SDK 仅位于 `src/backend.js`。HTTP adapter 只接收 `supabase.auth`，无法使用数据客户端的 `.from()`、`.rpc()` 或 `.storage` 方法。`test/data-access-boundary.test.js` 检查应用源码，防止在该文件以外新增 SDK import、直接 Supabase REST URL、RPC 或 Storage 调用。现有 Pages CI 通过 `npm test` 执行此检查。Auth 调用和公开头像 URL 构造是有意允许的。
+Supabase 前端数据 SDK 仅位于 `src/backend.ts`。HTTP adapter 只接收 `supabase.auth`，无法使用数据客户端的 `.from()`、`.rpc()` 或 `.storage` 方法。`test/data-access-boundary.test.ts` 检查应用源码，防止在该文件以外新增 SDK import、直接 Supabase REST URL、RPC 或 Storage 调用。现有 Pages CI 通过 `npm test` 执行此检查。Auth 调用和公开头像 URL 构造是有意允许的。
 
 ## Cloud Run：linghang-main-app
 

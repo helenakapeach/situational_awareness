@@ -1,4 +1,4 @@
-import type { Post, Profile, Reply, SessionUser, ValidationResult } from './types.ts'
+import type { MemberRole, Post, Profile, ProfileFormInput, ProfileUpdateRequest, Reply, SessionUser, ValidationResult } from './types.ts'
 
 export const LIMITS = Object.freeze({
   titleMin: 3,
@@ -248,7 +248,7 @@ function fitsLine(text: string, max: number) {
   return !CONTROL_CHARS.test(text) && [...text].length <= max
 }
 
-export function validateProfile(input: Partial<Record<string, unknown>> | null | undefined): ValidationResult<Profile> {
+export function validateProfile(input: Partial<ProfileFormInput> | null | undefined): ValidationResult<ProfileUpdateRequest> {
   const displayName = normalizeText(input?.display_name)
   if (!displayName || !fitsLine(displayName, LIMITS.displayNameMax)) {
     return { ok: false, message: '昵称需要 1 到 30 个字，且不能换行。' }
@@ -306,7 +306,7 @@ export function validateProfile(input: Partial<Record<string, unknown>> | null |
       email_public: Boolean(email) && Boolean(input?.email_public),
       wechat_id: wechat || null,
       wechat_public: Boolean(wechat) && Boolean(input?.wechat_public),
-      role: role || null,
+      role: (role || null) as MemberRole | null,
       cohort_id: cohortId,
       graduation_year: graduationYear,
     },

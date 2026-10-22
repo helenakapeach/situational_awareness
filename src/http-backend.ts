@@ -1,11 +1,11 @@
 import { postIdFromSearch, postUrl } from './lib.ts'
-import type { AppSession, Backend, Cohort, Member, Post, PostSummary, Profile, ProfileCard, Reply, ReplySummary } from './types.ts'
+import type { AppSession, Cohort, HttpBackend, HttpLikedContent, HttpMember, HttpMineContent, HttpOwnProfile, HttpPost, HttpPublicProfileCard, ProfileUpdateRequest } from './types.ts'
 
 interface SessionExchangeResponse {
   accessToken: string
-  tokenType?: string
-  expiresIn?: number
-  user?: { id?: string; email?: string | null; user_metadata?: AppSession['user']['user_metadata'] }
+  tokenType: 'Bearer'
+  expiresIn: number
+  user: { id: string; email: string; user_metadata: NonNullable<AppSession['user']['user_metadata']> }
 }
 interface AuthPort {
   getSession(): Promise<{ data: { session: AppSession | null }; error: Error | null }>
@@ -15,12 +15,12 @@ interface AuthPort {
 }
 export interface HttpRequestInit {
   method: string
-  headers: Headers
+  headers: HeadersInit
   body?: string | Blob
 }
 
 /** HTTP adapter for FastAPI. Supabase is used only for Google OAuth. */
-export function createHttpBackend({ baseUrl, auth, fetchImpl = fetch as (url: string, init: HttpRequestInit) => Promise<Response> }: { baseUrl: string; auth: AuthPort; fetchImpl?: (url: string, init: HttpRequestInit) => Promise<Response> }): Backend {
+export function createHttpBackend({ baseUrl, auth, fetchImpl = fetch as (url: string, init: HttpRequestInit) => Promise<Response> }: { baseUrl: string; auth: AuthPort; fetchImpl?: (url: string, init: HttpRequestInit) => Promise<Response> }): HttpBackend {
   const apiBase = String(baseUrl || '').replace(/\/+$/, '')
   let appSession: AppSession | null = null
   let exchangedSupabaseToken: string | null = null
@@ -47,7 +47,7 @@ export function createHttpBackend({ baseUrl, auth, fetchImpl = fetch as (url: st
     const promise = (async () => {
       const response = await fetchImpl(`${apiBase}/api/auth/session`, {
         method: 'POST',
-        headers: new Headers({ 'Content-Type': 'application/json' }),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ access_token: accessToken, provider: 'supabase' }),
       })
       const result = await readResponse(response) as SessionExchangeResponse
@@ -156,39 +156,40 @@ export function createHttpBackend({ baseUrl, auth, fetchImpl = fetch as (url: st
       appTokenExpiresAt = 0
     },
     async memberAccess() { return (await request<{ is_member: boolean; is_admin: boolean; is_disabled: boolean }>('/api/member-access')) || { is_member: false, is_admin: false, is_disabled: false } },
-    async adminMembers() { return request<Member[]>('/api/admin/members') },
-    async adminSetDisabled(userId, disabled) { await request(`/api/admin/members/${id(userId)}`, { method: 'PATCH', body: { is_disabled: disabled } }) },
-    async adminDeleteContent(contentId, kind) { await request(`/api/admin/content/${id(kind)}/${id(contentId)}`, { method: 'DELETE' }) },
-    async adminSetRoleVerified(userId, verified) { await request(`/api/admin/members/${id(userId)}/role-verification`, { method: 'PUT', body: { verified } }) },
-    async getOwnProfile() { return request<Profile | null>('/api/profile') },
-    async getProfile(publicId) { return request<ProfileCard | null>(`/api/profiles/${id(publicId)}`) },
+    async adminMembers() { return request<HttpMember[]>('/api/admin/members') },
+    async adminSetDisabled(userId, disabled) { await request<null>(`/api/admin/members/${id(userId)}`, { method: 'PATCH', body: { is_disabled: disabled } }) },
+    async adminDeleteContent(contentId, kind) { await request<null>(`/api/admin/content/${id(kind)}/${id(contentId)}`, { method: 'DELETE' }) },
+    async adminSetRoleVerified(userId, verified) { await request<null>(`/api/admin/members/${id(userId)}/role-verification`, { method: 'PUT', body: { verified } }) },
+    async getPost(postId) { return request<HttpPost>(`/api/posts/${id(postId)}`) },
+    async getOwnProfile() { return request<HttpOwnProfile>('/api/profile') },
+    async getProfile(publicId) { return request<HttpPublicProfileCard | null>(`/api/profiles/${id(publicId)}`) },
     async listCohorts() { return (await request<Cohort[]>('/api/cohorts')) || [] },
-    async updateOwnProfile(profile) { return request<Profile>('/api/profile', { method: 'PUT', body: profile }) },
-    async uploadAvatar(blob) { return request<Profile>('/api/profile/avatar', { method: 'POST', body: blob, headers: { 'Content-Type': 'image/webp' } }) },
-    async clearAvatar() { return request<Profile>('/api/profile/avatar', { method: 'DELETE' }) },
+    async updateOwnProfile(profile: ProfileUpdateRequest) { return request<HttpOwnProfile>('/api/profile', { method: 'PUT', body: profile }) },
+    async uploadAvatar(blob) { return request<HttpOwnProfile>('/api/profile/avatar', { method: 'POST', body: blob, headers: { 'Content-Type': 'image/webp' } }) },
+    async clearAvatar() { return request<HttpOwnProfile>('/api/profile/avatar', { method: 'DELETE' }) },
     async isMember() { return Boolean((await request<{ is_member: boolean }>('/api/member-access'))?.is_member) },
-    async redeemInviteCode(code) { return Boolean(await request('/api/invite-redemptions', { method: 'POST', body: { code } })) },
+    async redeemInviteCode(code) { return Boolean(await request<boolean>('/api/invite-redemptions', { method: 'POST', body: { code } })) },
     async listPosts({ before = null, before_id = null } = {}) {
       const query = new URLSearchParams()
       if (before) query.set('before', before)
       if (before_id != null) query.set('before_id', String(before_id))
-      return (await request<Post[]>(`/api/posts${query.size ? `?${query}` : ''}`)) || []
+      return (await request<HttpPost[]>(`/api/posts${query.size ? `?${query}` : ''}`)) || []
     },
     async searchPosts(term) {
       const query = new URLSearchParams({ q: String(term ?? '') })
-      return (await request<Post[]>(`/api/posts/search?${query}`)) || []
+      return (await request<HttpPost[]>(`/api/posts/search?${query}`)) || []
     },
-    async listMine() { return (await request<{ posts: PostSummary[]; replies: ReplySummary[] }>('/api/me/content')) || { posts: [], replies: [] } },
-    async createPost(post) { await request('/api/posts', { method: 'POST', body: post }) },
-    async updatePost(postId, post) { await request(`/api/posts/${id(postId)}`, { method: 'PATCH', body: post }) },
-    async deletePost(postId) { await request(`/api/posts/${id(postId)}`, { method: 'DELETE' }) },
-    async createReply(postId, reply) { await request(`/api/posts/${id(postId)}/replies`, { method: 'POST', body: reply }) },
-    async updateReply(replyId, body) { await request(`/api/replies/${id(replyId)}`, { method: 'PATCH', body: { body } }) },
-    async deleteReply(replyId) { await request(`/api/replies/${id(replyId)}`, { method: 'DELETE' }) },
-    async togglePostVote(postId) { await request(`/api/posts/${id(postId)}/vote`, { method: 'POST' }) },
-    async toggleReplyVote(replyId) { await request(`/api/replies/${id(replyId)}/vote`, { method: 'POST' }) },
-    async listLiked() { return (await request<{ posts: PostSummary[]; replies: ReplySummary[] }>('/api/likes')) || { posts: [], replies: [] } },
-    async createFeedback(feedback) { await request('/api/feedback', { method: 'POST', body: feedback }) },
+    async listMine() { return (await request<HttpMineContent>('/api/me/content')) || { posts: [], replies: [] } },
+    async createPost(post) { await request<null>('/api/posts', { method: 'POST', body: post }) },
+    async updatePost(postId, post) { await request<null>(`/api/posts/${id(postId)}`, { method: 'PATCH', body: post }) },
+    async deletePost(postId) { await request<null>(`/api/posts/${id(postId)}`, { method: 'DELETE' }) },
+    async createReply(postId, reply) { await request<null>(`/api/posts/${id(postId)}/replies`, { method: 'POST', body: reply }) },
+    async updateReply(replyId, body) { await request<null>(`/api/replies/${id(replyId)}`, { method: 'PATCH', body: { body } }) },
+    async deleteReply(replyId) { await request<null>(`/api/replies/${id(replyId)}`, { method: 'DELETE' }) },
+    async togglePostVote(postId) { await request<null>(`/api/posts/${id(postId)}/vote`, { method: 'POST' }) },
+    async toggleReplyVote(replyId) { await request<null>(`/api/replies/${id(replyId)}/vote`, { method: 'POST' }) },
+    async listLiked() { return (await request<HttpLikedContent>('/api/likes')) || { posts: [], replies: [] } },
+    async createFeedback(feedback) { await request<null>('/api/feedback', { method: 'POST', body: feedback }) },
   }
 }
 

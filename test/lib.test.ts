@@ -113,12 +113,12 @@ test('profile validation accepts a complete card and rejects bad contact details
       graduation_year: null,
     },
   })
-  assert.equal(validateProfile({ display_name: '好', role: 'student', graduation_year: 2015 }).ok, false)
-  assert.equal(validateProfile({ display_name: '好', role: 'student', graduation_year: 2028 }).ok, false)
-  assert.equal(validProfile({ display_name: '好', role: 'student', graduation_year: 2016 }).graduation_year, 2016)
-  assert.equal(validProfile({ display_name: '好', role: 'committee', graduation_year: 2016, cohort_id: 1 }).graduation_year, null)
-  assert.equal(validProfile({ display_name: '好', role: 'mentor', graduation_year: 2020 }).graduation_year, null)
-  assert.equal(validProfile({ display_name: '好', role: 'committee', cohort_id: 1 }).cohort_id, null)
+  assert.equal(validateProfile({ display_name: '好', role: 'student', graduation_year: '2015' }).ok, false)
+  assert.equal(validateProfile({ display_name: '好', role: 'student', graduation_year: '2028' }).ok, false)
+  assert.equal(validProfile({ display_name: '好', role: 'student', graduation_year: '2016' }).graduation_year, 2016)
+  assert.equal(validProfile({ display_name: '好', role: 'committee', graduation_year: '2016', cohort_id: '1' }).graduation_year, null)
+  assert.equal(validProfile({ display_name: '好', role: 'mentor', graduation_year: '2020' }).graduation_year, null)
+  assert.equal(validProfile({ display_name: '好', role: 'committee', cohort_id: '1' }).cohort_id, null)
   assert.equal(validateProfile({ display_name: '' }).ok, false)
   assert.equal(validateProfile({ display_name: '好', linkedin_url: 'https://evil.example/in/lin' }).ok, false)
   assert.equal(validateProfile({ display_name: '好', linkedin_url: 'www.evil.example/in/lin' }).ok, false)
@@ -133,7 +133,7 @@ test('profile validation accepts a complete card and rejects bad contact details
   assert.equal(validateProfile({ display_name: '好', contact_email: 'not-an-email' }).ok, false)
   assert.equal(validateProfile({ display_name: '好', wechat_id: '12bad' }).ok, false)
   assert.equal(validateProfile({ display_name: '好', role: 'staff' }).ok, false)
-  assert.equal(validProfile({ display_name: '好', role: 'mentor', cohort_id: 4 }).cohort_id, null)
+  assert.equal(validProfile({ display_name: '好', role: 'mentor', cohort_id: '4' }).cohort_id, null)
 })
 
 test('LinkedIn display input becomes a usable URL in unsaved profile previews', () => {

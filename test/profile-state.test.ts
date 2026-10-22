@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import type { OwnProfile } from '../src/types.ts'
 import {
   cancelProfileEdit,
   captureProfileDraft,
@@ -14,7 +15,16 @@ import {
 } from '../src/profile-state.ts'
 
 const savedProfile = {
+  public_id: 'lin-ran',
   display_name: 'Lin Ran',
+  tagline: null,
+  avatar_url: '',
+  role: 'mentor' as const,
+  cohort_id: null,
+  cohort_name: null,
+  graduation_year: null,
+  role_verified: false,
+  is_self: true,
   bio: 'Saved introduction',
   linkedin_url: 'https://www.linkedin.com/in/linran',
   linkedin_public: true,
@@ -22,10 +32,10 @@ const savedProfile = {
   email_public: true,
   wechat_id: 'linran_work',
   wechat_public: false,
-}
+} satisfies OwnProfile
 
 test('member preview shows the current draft and returning to edit retains it', () => {
-  const draft = { ...savedProfile, display_name: 'Draft name', bio: 'Unsaved introduction' }
+  const draft = { display_name: 'Draft name', tagline: '', bio: 'Unsaved introduction' }
   let state = startProfileEdit(createProfileViewState())
   state = enterProfilePreview(state, draft)
 
