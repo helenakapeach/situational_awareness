@@ -1,33 +1,60 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createSupabaseBackend } from '../src/backend.js'
+import { createSupabaseBackend } from '../src/backend.ts'
 
-function createSupabaseMock({ rpc = {}, tables = {}, uploadResult = { data: {}, error: null } } = {}) {
-  const calls = []
-  const tableReads = new Map()
+interface MockResult { data: unknown; error: Error | null }
+interface MockCall {
+  type: 'rpc' | 'query' | 'upload'
+  name?: string
+  args?: unknown[] | Record<string, unknown>
+  table?: string
+  method?: string
+  bucket?: string
+  path?: string
+  blob?: Blob
+  options?: unknown
+}
+interface MockQuery {
+  (...args: unknown[]): MockQuery
+  [key: string]: unknown
+  then: Promise<MockResult>['then']
+}
+
+function createSupabaseMock({
+  rpc = {},
+  tables = {},
+  uploadResult = { data: {}, error: null },
+}: {
+  rpc?: Record<string, MockResult | ((args: unknown) => MockResult)>
+  tables?: Record<string, MockResult[]>
+  uploadResult?: MockResult
+} = {}) {
+  const calls: MockCall[] = []
+  const tableReads = new Map<string, number>()
   const client = {
     calls,
-    rpc(name, args) {
+    rpc(name: string, args?: Record<string, unknown>) {
       calls.push({ type: 'rpc', name, args })
       const response = rpc[name] ?? { data: null, error: null }
       return Promise.resolve(typeof response === 'function' ? response(args) : response)
     },
-    from(table) {
+    from(table: string) {
       const index = tableReads.get(table) || 0
       tableReads.set(table, index + 1)
       const result = (tables[table] || [])[index] ?? { data: [], error: null }
       const query = { table, result }
-      const chain = (method) => (...args) => {
+      const chain: MockQuery = ((...args: unknown[]) => {
+        calls.push({ type: 'query', table, method: 'then', args })
+        return chain
+      }) as MockQuery
+      const run = (method: string) => (...args: unknown[]): MockQuery => {
         calls.push({ type: 'query', table, method, args })
         return chain
       }
       for (const method of ['select', 'order', 'limit', 'lt', 'in', 'eq', 'insert', 'update', 'delete']) {
-        chain[method] = (...args) => {
-          calls.push({ type: 'query', table, method, args })
-          return chain
-        }
+        chain[method] = run(method)
       }
-      chain.maybeSingle = async () => {
+      chain.maybeSingle = async (): Promise<MockResult> => {
         calls.push({ type: 'query', table, method: 'maybeSingle', args: [] })
         return query.result
       }
@@ -35,9 +62,9 @@ function createSupabaseMock({ rpc = {}, tables = {}, uploadResult = { data: {}, 
       return chain
     },
     storage: {
-      from(bucket) {
+      from(bucket: string) {
         return {
-          async upload(path, blob, options) {
+          async upload(path: string, blob: Blob, options: { contentType: string; upsert: boolean }) {
             calls.push({ type: 'upload', bucket, path, blob, options })
             return uploadResult
           },
@@ -48,12 +75,18 @@ function createSupabaseMock({ rpc = {}, tables = {}, uploadResult = { data: {}, 
   return client
 }
 
-function backend(mock) { return createSupabaseBackend({ supabase: mock, url: 'https://project.supabase.co' }) }
-function rpcNames(mock) { return mock.calls.filter((call) => call.type === 'rpc').map((call) => call.name) }
+type SupabaseMock = ReturnType<typeof createSupabaseMock>
+function backend(mock: SupabaseMock) {
+  return createSupabaseBackend({ supabase: mock as unknown as Parameters<typeof createSupabaseBackend>[0]['supabase'], url: 'https://project.supabase.co' })
+}
+function rpcNames(mock: SupabaseMock): string[] {
+  return mock.calls.filter((call) => call.type === 'rpc').map((call) => call.name ?? '')
+}
 
 test('Supabase adapter exposes all core actions in the shared API contract', async () => {
   const contract = await import('./fixtures/backend-contract.json', { with: { type: 'json' } })
-  const methods = Object.keys(backend(createSupabaseMock())).filter((key) => typeof backend(createSupabaseMock())[key] === 'function')
+  const api = backend(createSupabaseMock())
+  const methods = Object.keys(api).filter((key) => typeof api[key as keyof typeof api] === 'function')
   const documented = new Set(contract.default.actions.map((action) => action.name))
   const dataMethods = new Set(methods.filter((method) => !['getSession', 'onAuthChange', 'signIn', 'signOut', 'isMember'].includes(method)))
   assert.deepEqual(dataMethods, documented)
@@ -84,13 +117,13 @@ test('maps all RPC and table operations to their Supabase names and payloads', a
     'member_access', 'admin_members', 'admin_set_disabled', 'admin_delete_content', 'admin_set_role_verified',
     'get_own_profile', 'get_profile', 'update_own_profile', 'clear_avatar', 'redeem_invite_code',
   ])
-  assert.deepEqual(mock.calls.find((call) => call.name === 'get_profile').args, { p_public_id: 'p' })
-  assert.deepEqual(mock.calls.find((call) => call.name === 'admin_set_disabled').args, { p_user_id: 'u1', p_disabled: true })
-  assert.deepEqual(mock.calls.find((call) => call.name === 'admin_delete_content').args, { p_id: 'p4', p_kind: 'post' })
-  assert.deepEqual(mock.calls.find((call) => call.name === 'admin_set_role_verified').args, { p_user_id: 'u1', p_verified: true })
-  assert.deepEqual(mock.calls.find((call) => call.name === 'update_own_profile').args, { p_profile: { display_name: 'B' } })
-  assert.deepEqual(mock.calls.find((call) => call.name === 'redeem_invite_code').args, { p_code: 'CODE' })
-  assert.deepEqual(mock.calls.filter((call) => call.table === 'cohorts').map(({ method, args }) => [method, ...args]), [
+  assert.deepEqual(mock.calls.find((call) => call.name === 'get_profile')?.args, { p_public_id: 'p' })
+  assert.deepEqual(mock.calls.find((call) => call.name === 'admin_set_disabled')?.args, { p_user_id: 'u1', p_disabled: true })
+  assert.deepEqual(mock.calls.find((call) => call.name === 'admin_delete_content')?.args, { p_id: 'p4', p_kind: 'post' })
+  assert.deepEqual(mock.calls.find((call) => call.name === 'admin_set_role_verified')?.args, { p_user_id: 'u1', p_verified: true })
+  assert.deepEqual(mock.calls.find((call) => call.name === 'update_own_profile')?.args, { p_profile: { display_name: 'B' } })
+  assert.deepEqual(mock.calls.find((call) => call.name === 'redeem_invite_code')?.args, { p_code: 'CODE' })
+  assert.deepEqual(mock.calls.filter((call) => call.table === 'cohorts').map(({ method, args }) => [method, ...(Array.isArray(args) ? args : [])]), [
     ['select', 'id,name'], ['order', 'sort_order', { ascending: true }],
   ])
 })
@@ -139,7 +172,7 @@ test('post pages strip vote relations and derive ownership, OP, and stable reply
   assert.deepEqual(post.replies.map((reply) => reply.is_op), [true, true, false])
   assert.equal(post.replies[0].is_mine, true)
   assert.equal('reply_votes' in post.replies[0], false)
-  assert.ok(mock.calls.some((call) => call.table === 'posts' && call.method === 'lt' && call.args[0] === 'created_at'))
+  assert.ok(mock.calls.some((call) => call.table === 'posts' && call.method === 'lt' && Array.isArray(call.args) && call.args[0] === 'created_at'))
 })
 
 test('search hydrates full matching threads and my content retains its scoped RPC shape', async () => {
@@ -164,8 +197,8 @@ test('search hydrates full matching threads and my content retains its scoped RP
   assert.equal(post.replies[0].is_op, true)
   assert.equal('post_votes' in post, false)
   assert.equal('reply_votes' in post.replies[0], false)
-  assert.deepEqual(mock.calls.find(({ name }) => name === 'search_posts').args, { p_query: '工作 %_.*' })
-  assert.ok(mock.calls.some(({ table, method, args }) => table === 'posts' && method === 'in' && args[0] === 'id' && args[1][0] === 9))
+  assert.deepEqual(mock.calls.find(({ name }) => name === 'search_posts')?.args, { p_query: '工作 %_.*' })
+  assert.ok(mock.calls.some(({ table, method, args }) => table === 'posts' && method === 'in' && Array.isArray(args) && args[0] === 'id' && Array.isArray(args[1]) && args[1][0] === 9))
   assert.deepEqual(await api.listMine(), mine)
 })
 
@@ -213,11 +246,11 @@ test('writes content through expected Supabase tables/RPCs and reports missing r
     },
   })
   const api = backend(mock)
-  await api.createPost({ title: 'title', body: 'body' })
-  await api.updatePost(5, { title: 'edited' })
-  await assert.rejects(api.updatePost(99, { title: 'missing' }), /已经不存在/)
+  await api.createPost({ title: 'title', body: 'body', is_anonymous: true })
+  await api.updatePost(5, { title: 'edited', body: 'edited body' })
+  await assert.rejects(api.updatePost(99, { title: 'missing', body: 'missing body' }), /已经不存在/)
   await api.deletePost(5)
-  await api.createReply(5, { body: 'reply' })
+  await api.createReply(5, { body: 'reply', is_anonymous: true })
   await api.updateReply(6, 'edited')
   await assert.rejects(api.updateReply(99, 'missing'), /已经不存在/)
   await api.deleteReply(6)
@@ -226,8 +259,8 @@ test('writes content through expected Supabase tables/RPCs and reports missing r
   await api.toggleReplyVote(6)
   await api.togglePostVote(5)
   assert.deepEqual(rpcNames(mock), ['delete_own_post', 'toggle_reply_vote', 'toggle_post_vote'])
-  assert.deepEqual(mock.calls.find((call) => call.table === 'posts' && call.method === 'insert').args, [{ title: 'title', body: 'body' }])
-  assert.deepEqual(mock.calls.find((call) => call.table === 'replies' && call.method === 'insert').args, [{ post_id: 5, body: 'reply' }])
+  assert.deepEqual(mock.calls.find((call) => call.table === 'posts' && call.method === 'insert')?.args, [{ title: 'title', body: 'body', is_anonymous: true }])
+  assert.deepEqual(mock.calls.find((call) => call.table === 'replies' && call.method === 'insert')?.args, [{ post_id: 5, body: 'reply', is_anonymous: true }])
 })
 
 test('propagates errors from ordinary RPC and query calls', async () => {

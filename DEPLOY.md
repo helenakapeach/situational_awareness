@@ -16,7 +16,7 @@
 - GitHub 仓库写权限（能 push `main`，能改 Settings）
 - 一个 [Supabase](https://supabase.com) 项目的 Owner / 能跑 SQL 和改 Authentication 的角色
 - 一个 [Google Cloud](https://console.cloud.google.com/) 项目，能创建 OAuth 客户端
-- 本机 Node **20 或更新**（GitHub Actions 用的是 24）
+- 本机 Node **24 或更新**（测试使用 Node 原生 TypeScript 支持）（GitHub Actions 用的是 24）
 
 ---
 
@@ -109,7 +109,7 @@ npm run dev
 
 当前正式地址：https://helenakapeach.github.io/situational_awareness/
 
-`vite.config.js` 里 `base: './'`，所以换到别的子路径一般不用改构建配置，但 Google / Supabase 的域名白名单要改。
+`vite.config.ts` 里 `base: './'`，所以换到别的子路径一般不用改构建配置，但 Google / Supabase 的域名白名单要改。
 
 ### 6. 建邀请码
 

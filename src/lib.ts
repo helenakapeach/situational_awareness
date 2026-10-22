@@ -1,3 +1,5 @@
+import type { MemberRole, Post, Profile, ProfileFormInput, ProfileUpdateRequest, Reply, SessionUser, ValidationResult } from './types.ts'
+
 export const LIMITS = Object.freeze({
   titleMin: 3,
   titleMax: 120,
@@ -26,28 +28,28 @@ const WECHAT_ID = /^[A-Za-z][A-Za-z0-9_-]{5,19}$/
 const STORAGE_AVATAR = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.webp$/i
 const DATA_AVATAR = /^data:image\/(?:png|jpeg|webp);base64,[a-z0-9+/]+={0,2}$/i
 
-export function normalizeText(value) {
+export function normalizeText(value: unknown) {
   return String(value ?? '').trim()
 }
 
-export function normalizeInviteCode(value) {
+export function normalizeInviteCode(value: unknown) {
   return String(value ?? '').trim().toUpperCase()
 }
 
-export function normalizePostId(value) {
+export function normalizePostId(value: unknown) {
   const text = String(value ?? '').trim()
   return /^\d+$/.test(text) && Number(text) > 0 ? text : null
 }
 
-export function backendStorageKey(key, backendMode) {
+export function backendStorageKey(key: string, backendMode: string) {
   return backendMode === 'mongo' ? `${key}:mongo` : key
 }
 
-export function postIdFromSearch(search = '') {
+export function postIdFromSearch(search: string = '') {
   return normalizePostId(new URLSearchParams(search).get('post'))
 }
 
-export function postUrl(currentUrl, postId = null) {
+export function postUrl(currentUrl: string, postId: string | number | null = null) {
   const url = new URL(currentUrl)
   const normalized = normalizePostId(postId)
   const mongoOptIn = url.searchParams.get('backend') === 'mongo'
@@ -58,12 +60,12 @@ export function postUrl(currentUrl, postId = null) {
   return url.href
 }
 
-export function postShareText(title, url) {
+export function postShareText(title: unknown, url: string) {
   const normalizedTitle = normalizeText(title).slice(0, LIMITS.titleMax)
   return normalizedTitle ? `${normalizedTitle}\n${url}` : url
 }
 
-export function validateInviteCode(value) {
+export function validateInviteCode(value: unknown): ValidationResult<string> {
   const code = normalizeInviteCode(value)
   if (!code) {
     return { ok: false, message: '请输入邀请码。' }
@@ -71,7 +73,7 @@ export function validateInviteCode(value) {
   return { ok: true, value: code }
 }
 
-export function validatePost(title, body) {
+export function validatePost(title: unknown, body: unknown): ValidationResult<{ title: string; body: string }> {
   const cleanTitle = normalizeText(title)
   const cleanBody = normalizeText(body)
 
@@ -91,7 +93,7 @@ export function validatePost(title, body) {
   return { ok: true, value: { title: cleanTitle, body: cleanBody } }
 }
 
-export function validateReply(body, anonymous = false) {
+export function validateReply(body: unknown, anonymous = false): ValidationResult<{ body: string; is_anonymous: boolean }> {
   const cleanBody = normalizeText(body)
 
   if (!cleanBody) {
@@ -104,7 +106,7 @@ export function validateReply(body, anonymous = false) {
   return { ok: true, value: { body: cleanBody, is_anonymous: Boolean(anonymous) } }
 }
 
-export function validateFeedback(body) {
+export function validateFeedback(body: unknown): ValidationResult<{ body: string }> {
   const cleanBody = normalizeText(body)
 
   if (!cleanBody) {
@@ -117,7 +119,7 @@ export function validateFeedback(body) {
   return { ok: true, value: { body: cleanBody } }
 }
 
-export function formatRelativeTime(input, now = Date.now()) {
+export function formatRelativeTime(input: string | number | Date, now = Date.now()) {
   const timestamp = new Date(input).getTime()
   if (!Number.isFinite(timestamp)) return '刚刚'
 
@@ -140,7 +142,7 @@ export function formatRelativeTime(input, now = Date.now()) {
   }).format(new Date(input))
 }
 
-export function formatAbsoluteTime(input) {
+export function formatAbsoluteTime(input: string | number | Date) {
   const date = new Date(input)
   if (!Number.isFinite(date.getTime())) return ''
   return new Intl.DateTimeFormat('zh-CN', {
@@ -152,27 +154,27 @@ export function formatAbsoluteTime(input) {
   }).format(date)
 }
 
-export function safeAvatarUrl(value) {
+export function safeAvatarUrl(value: unknown) {
   if (!value) return null
 
   try {
-    const url = new URL(value)
+    const url = new URL(String(value))
     return ['https:', 'http:'].includes(url.protocol) ? url.href : null
   } catch {
     return null
   }
 }
 
-function isDataAvatar(text) {
+function isDataAvatar(text: string) {
   return text.length <= 200_000 && DATA_AVATAR.test(text)
 }
 
-export function isUploadedAvatar(value) {
+export function isUploadedAvatar(value: unknown) {
   const text = String(value ?? '')
   return STORAGE_AVATAR.test(text) || isDataAvatar(text)
 }
 
-export function displayAvatarUrl(value, storageBase = '') {
+export function displayAvatarUrl(value: unknown, storageBase = '') {
   const text = String(value ?? '')
   if (STORAGE_AVATAR.test(text)) {
     return storageBase ? safeAvatarUrl(`${storageBase}/storage/v1/object/public/avatars/${text}`) : null
@@ -181,8 +183,8 @@ export function displayAvatarUrl(value, storageBase = '') {
   return safeAvatarUrl(text)
 }
 
-export function roleLabel(role, cohortName = '') {
-  const label = ROLES[role]
+export function roleLabel(role: string | null, cohortName = '') {
+  const label = (ROLES as Readonly<Record<string, string>>)[role ?? '']
   if (!label) return ''
   const cohort = normalizeText(cohortName)
   if (role === 'student' && cohort) return `${label} · ${cohort}`
@@ -208,20 +210,20 @@ const ANONYMOUS_PERSONAS = [
   { name: '小麋鹿', emoji: '🦌' },
 ]
 
-function personaIndex(id) {
+function personaIndex(id: string | number) {
   const text = String(id ?? '')
   let hash = 0
-  for (const char of text) hash = (Math.imul(hash, 31) + char.codePointAt(0)) >>> 0
+  for (const char of text) hash = (Math.imul(hash, 31) + (char.codePointAt(0) ?? 0)) >>> 0
   return hash % ANONYMOUS_PERSONAS.length
 }
 
-export function anonymousPersona(id) {
+export function anonymousPersona(id: string | number) {
   return ANONYMOUS_PERSONAS[personaIndex(id)]
 }
 
 // Two different anonymous people in one thread must not share an animal,
 // or readers will take them for the same person.
-export function assignAnonymousPersonas(ids) {
+export function assignAnonymousPersonas(ids: readonly (string | number)[]) {
   const used = new Set()
   const assigned = new Map()
   for (const id of ids) {
@@ -229,12 +231,12 @@ export function assignAnonymousPersonas(ids) {
     let index = personaIndex(id)
     while (used.has(index)) index = (index + 1) % ANONYMOUS_PERSONAS.length
     used.add(index)
-    assigned.set(String(id), ANONYMOUS_PERSONAS[index])
+    assigned.set(String(id), ANONYMOUS_PERSONAS[index]!)
   }
   return assigned
 }
 
-export function graduationLabel(year) {
+export function graduationLabel(year: unknown) {
   const value = Number(year)
   if (!Number.isInteger(value) || value < GRADUATION_YEAR_MIN || value > GRADUATION_YEAR_MAX) return ''
   return `${value} 届`
@@ -242,11 +244,11 @@ export function graduationLabel(year) {
 
 const CONTROL_CHARS = /[\u0000-\u001F]/
 
-function fitsLine(text, max) {
+function fitsLine(text: string, max: number) {
   return !CONTROL_CHARS.test(text) && [...text].length <= max
 }
 
-export function validateProfile(input) {
+export function validateProfile(input: Partial<ProfileFormInput> | null | undefined): ValidationResult<ProfileUpdateRequest> {
   const displayName = normalizeText(input?.display_name)
   if (!displayName || !fitsLine(displayName, LIMITS.displayNameMax)) {
     return { ok: false, message: '昵称需要 1 到 30 个字，且不能换行。' }
@@ -282,7 +284,7 @@ export function validateProfile(input) {
     return { ok: false, message: '请选择领航执委会、领航导师、领航学员或其他成员。' }
   }
 
-  const studentNumber = (value) => (role === 'student' && value != null && value !== '' ? Number(value) : null)
+  const studentNumber = (value: unknown) => (role === 'student' && value != null && value !== '' ? Number(value) : null)
   const cohortId = studentNumber(input?.cohort_id)
   if (cohortId != null && !Number.isInteger(cohortId)) {
     return { ok: false, message: '请选择一个有效的班级。' }
@@ -304,32 +306,32 @@ export function validateProfile(input) {
       email_public: Boolean(email) && Boolean(input?.email_public),
       wechat_id: wechat || null,
       wechat_public: Boolean(wechat) && Boolean(input?.wechat_public),
-      role: role || null,
+      role: (role || null) as MemberRole | null,
       cohort_id: cohortId,
       graduation_year: graduationYear,
     },
   }
 }
 
-export function validLinkedInUrl(value) {
+export function validLinkedInUrl(value: unknown) {
   return LINKEDIN_URL.test(normalizeText(value))
 }
 
-function normalizeLinkedInUrl(value) {
+export function normalizeLinkedInUrl(value: unknown) {
   const text = normalizeText(value)
   if (!text) return ''
   return `https://${text.replace(/^https?:\/\//i, '')}`
 }
 
-export function linkedInDisplayValue(value) {
+export function linkedInDisplayValue(value: unknown) {
   return normalizeText(value).replace(/^https?:\/\//i, '')
 }
 
-export function validContactEmail(value) {
+export function validContactEmail(value: unknown) {
   return CONTACT_EMAIL.test(normalizeText(value))
 }
 
-export function displayName(user) {
+export function displayName(user: Pick<SessionUser, 'user_metadata'> | null | undefined) {
   return (
     normalizeText(user?.user_metadata?.full_name) ||
     normalizeText(user?.user_metadata?.name) ||
@@ -337,18 +339,18 @@ export function displayName(user) {
   ).slice(0, 80)
 }
 
-export function initials(name) {
+export function initials(name: unknown) {
   const cleanName = normalizeText(name)
   if (!cleanName) return '人'
 
   const chunks = cleanName.split(/\s+/).filter(Boolean)
   if (chunks.length > 1) {
-    return `${chunks[0][0]}${chunks.at(-1)[0]}`.toUpperCase()
+    return `${chunks[0]?.[0] ?? ''}${chunks.at(-1)?.[0] ?? ''}`.toUpperCase()
   }
   return cleanName.slice(0, 2).toUpperCase()
 }
 
-export function excerptPlain(source, max = 48) {
+export function excerptPlain(source: unknown, max = 48) {
   const text = String(source ?? '')
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
@@ -364,12 +366,12 @@ export function excerptPlain(source, max = 48) {
   return `${chars.slice(0, max).join('').trim()}…`
 }
 
-export function compareReplies(a, b) {
+export function compareReplies(a: Partial<Reply>, b: Partial<Reply>) {
   const voteDiff = (Number(b?.upvote_count) || 0) - (Number(a?.upvote_count) || 0)
   if (voteDiff !== 0) return voteDiff
 
-  const timeA = new Date(a?.created_at).getTime()
-  const timeB = new Date(b?.created_at).getTime()
+  const timeA = new Date(a?.created_at ?? '').getTime()
+  const timeB = new Date(b?.created_at ?? '').getTime()
   const safeA = Number.isFinite(timeA) ? timeA : 0
   const safeB = Number.isFinite(timeB) ? timeB : 0
   if (safeA !== safeB) return safeA - safeB
@@ -377,11 +379,11 @@ export function compareReplies(a, b) {
   return (Number(a?.id) || 0) - (Number(b?.id) || 0)
 }
 
-export function sortReplies(replies) {
+export function sortReplies<T extends Pick<Reply, 'id' | 'created_at'> & Partial<Reply>>(replies: T[]) {
   return [...(replies || [])].sort(compareReplies)
 }
 
-export function withVoteState(item, liked) {
+export function withVoteState<T extends Record<string, unknown>>(item: T, liked: unknown): T & { upvote_count: number; liked_by_me: boolean } {
   return {
     ...item,
     upvote_count: Math.max(0, Number(item.upvote_count) || 0),
@@ -389,24 +391,27 @@ export function withVoteState(item, liked) {
   }
 }
 
-function seenCutoff(lastSeenAt) {
+function seenCutoff(lastSeenAt: string | number | Date) {
   const cutoff = typeof lastSeenAt === 'number' ? lastSeenAt : new Date(lastSeenAt).getTime()
   return Number.isFinite(cutoff) ? cutoff : null
 }
 
-function participatedIn(post) {
+type ReplyActivity = Partial<Reply>
+type PostActivity = Omit<Partial<Post>, 'replies'> & { replies?: ReplyActivity[] }
+
+function participatedIn(post: PostActivity | null | undefined) {
   const replies = Array.isArray(post?.replies) ? post.replies : []
   return Boolean(post?.is_mine) || replies.some((reply) => reply?.is_mine)
 }
 
-export function isNewReply(post, reply, lastSeenAt) {
+export function isNewReply(post: PostActivity, reply: Partial<Reply>, lastSeenAt: string | number | Date) {
   const cutoff = seenCutoff(lastSeenAt)
   if (!participatedIn(post) || cutoff === null || reply?.is_mine) return false
-  const createdAt = new Date(reply?.created_at).getTime()
+  const createdAt = new Date(reply?.created_at ?? '').getTime()
   return Number.isFinite(createdAt) && createdAt > cutoff
 }
 
-export function unreadReplyCount(post, lastSeenAt) {
+export function unreadReplyCount(post: PostActivity, lastSeenAt: string | number | Date) {
   if (!participatedIn(post) || seenCutoff(lastSeenAt) === null) return 0
   const replies = Array.isArray(post?.replies) ? post.replies : []
   return replies.filter((reply) => isNewReply(post, reply, lastSeenAt)).length
@@ -415,11 +420,11 @@ export function unreadReplyCount(post, lastSeenAt) {
 // Same author is not enough: the badge only shows when the reply and the post
 // are both anonymous or both named. A mismatch would tie a hidden identity to
 // a visible one.
-export function replyIsFromOp(postAnonymous, replyAnonymous, sameAuthor) {
+export function replyIsFromOp(postAnonymous: boolean, replyAnonymous: boolean, sameAuthor: boolean) {
   return Boolean(sameAuthor) && Boolean(postAnonymous) === Boolean(replyAnonymous)
 }
 
-export function isLateNight(date = new Date()) {
+export function isLateNight(date: Date = new Date()) {
   const hour = date.getHours()
   return hour >= 23 || hour < 5
 }
@@ -431,11 +436,11 @@ export const MILESTONES = Object.freeze({
 })
 
 // A milestone is someone else noticing you, so the viewer's own vote never counts.
-function votesFromOthers(item) {
+function votesFromOthers(item: Partial<Post> | Partial<Reply>) {
   return Math.max(0, (Number(item?.upvote_count) || 0) - (item?.liked_by_me ? 1 : 0))
 }
 
-export function reachedMilestones(posts) {
+export function reachedMilestones(posts: PostActivity[]) {
   const reached = new Set()
   for (const post of posts || []) {
     const replies = Array.isArray(post?.replies) ? post.replies : []
@@ -451,25 +456,25 @@ export function reachedMilestones(posts) {
 }
 
 // Root replies keep vote ranking; conversations always read oldest to newest.
-export function groupReplyThreads(replies) {
-  const byId = new Map(replies.map(reply => [String(reply.id), reply]))
-  const groups = new Map()
+export function groupReplyThreads<T extends Pick<Reply, 'id' | 'post_id'> & Partial<Reply>>(replies: T[]) {
+  const byId = new Map<string, T>(replies.map(reply => [String(reply.id), reply]))
+  const groups = new Map<string, { root: T; children: T[] }>()
   for (const reply of replies) {
     let root = reply
     const visited = new Set([String(root.id)])
     while (root.parent_reply_id != null && byId.has(String(root.parent_reply_id))) {
-      const parent = byId.get(String(root.parent_reply_id))
+      const parent = byId.get(String(root.parent_reply_id))!
       if (String(parent.post_id) !== String(reply.post_id) || visited.has(String(parent.id))) break
       visited.add(String(parent.id))
       root = parent
     }
     const key = String(root.id)
     if (!groups.has(key)) groups.set(key, { root, children: [] })
-    if (String(reply.id) !== key) groups.get(key).children.push(reply)
+    if (String(reply.id) !== key) groups.get(key)?.children.push(reply)
   }
   return [...groups.values()].sort((a, b) => compareReplies(a.root, b.root)).map(group => ({
     ...group,
     children: group.children.sort((a, b) =>
-      new Date(a.created_at) - new Date(b.created_at) || Number(a.id) - Number(b.id)),
+      new Date(a.created_at ?? '').getTime() - new Date(b.created_at ?? '').getTime() || Number(a.id) - Number(b.id)),
   }))
 }

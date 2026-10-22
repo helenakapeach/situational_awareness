@@ -1,6 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
-import { LIMITS, normalizeInviteCode, postIdFromSearch, postUrl, replyIsFromOp, sortReplies, withVoteState } from './lib.js'
-import { createHttpBackend } from './http-backend.js'
+import { LIMITS, normalizeInviteCode, postIdFromSearch, postUrl, replyIsFromOp, sortReplies, withVoteState } from './lib.ts'
+import { createHttpBackend } from './http-backend.ts'
+import type { AdminBackend, Backend, DemoBackend, HttpBackend, LikedPost, LikedReply, Post, Profile, ProfileCard, ProfileUpdateRequest, Reply } from './types.ts'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 const DEMO_STORAGE_KEY = 'situational-awareness-demo-v9'
 const DEMO_SESSION_KEY = 'situational-awareness-demo-session'
@@ -15,6 +17,35 @@ const DEMO_COHORTS = [
   { id: 2, name: '职业组进阶班' },
   { id: 3, name: '职业组成长版' },
 ]
+
+type DemoPost = Pick<Post, 'id' | 'title' | 'body' | 'author_name' | 'author_avatar_url' | 'is_anonymous' | 'created_at' | 'upvote_count'> & {
+  author_id: string
+  updated_at: string | null
+  author_public_id?: string | null
+  author_role?: string | null
+  author_cohort_name?: string | null
+  author_role_verified?: boolean
+}
+type DemoReply = Pick<Reply, 'id' | 'post_id' | 'author_name' | 'author_avatar_url' | 'is_anonymous' | 'body' | 'created_at' | 'upvote_count'> & {
+  author_id: string
+  parent_reply_id?: number | string | null
+  updated_at?: string | null
+  author_public_id?: string | null
+  author_role?: string | null
+  author_cohort_name?: string | null
+  author_role_verified?: boolean
+}
+type RawPost = Omit<Post, 'liked_by_me' | 'replies'> & { post_votes?: Array<{ post_id: number | string }> }
+interface DemoData {
+  nextPostId: number
+  nextReplyId: number
+  nextFeedbackId: number
+  feedback: Array<{ id: number; body: string; created_at: string }>
+  posts: DemoPost[]
+  replies: DemoReply[]
+  reply_votes: Array<{ reply_id: number | string; user_id: string }>
+  post_votes: Array<{ post_id: number | string; user_id: string }>
+}
 
 function defaultDemoProfile() {
   return {
@@ -37,7 +68,7 @@ function defaultDemoProfile() {
   }
 }
 
-const DEMO_DIRECTORY = {
+const DEMO_DIRECTORY: Record<string, Partial<Profile> & Pick<Profile, 'public_id' | 'display_name'>> = {
   'seed-c': {
     public_id: 'seed-c',
     display_name: '林然',
@@ -71,8 +102,8 @@ const DEMO_DIRECTORY = {
   },
 }
 
-function publicProfileCard(profile, isSelf) {
-  const card = {
+function publicProfileCard(profile: Partial<Profile> & Pick<Profile, 'public_id' | 'display_name'>, isSelf: boolean): ProfileCard {
+  const card: ProfileCard = {
     public_id: profile.public_id,
     display_name: profile.display_name,
     tagline: profile.tagline,
@@ -90,7 +121,7 @@ function publicProfileCard(profile, isSelf) {
   return card
 }
 
-function contentIdentity(profile) {
+function contentIdentity(profile: Profile | null) {
   if (!profile) {
     return {
       author_name: '匿名成员',
@@ -119,11 +150,11 @@ const demoUser = {
   },
 }
 
-function hoursAgo(hours) {
+function hoursAgo(hours: number) {
   return new Date(Date.now() - hours * 60 * 60 * 1000).toISOString()
 }
 
-function initialDemoData() {
+function initialDemoData(): DemoData {
   return {
     nextPostId: 3,
     nextReplyId: 7,
@@ -261,7 +292,7 @@ function initialDemoData() {
   }
 }
 
-function hasValidConfig(url, key) {
+function hasValidConfig(url: string, key: string) {
   try {
     const parsed = new URL(url)
     return parsed.protocol === 'https:' && Boolean(key) && !url.includes('YOUR_PROJECT')
@@ -281,7 +312,7 @@ export function resolveBackendMode({ search = '', apiBaseUrl = '' } = {}) {
   return 'mongo'
 }
 
-export function createBackend() {
+export function createBackend(): Backend {
   const url = import.meta.env.VITE_SUPABASE_URL || ''
   const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || ''
   const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL || ''
@@ -311,10 +342,10 @@ export function createBackend() {
   return createSupabaseBackend({ supabase, url })
 }
 
-export function createSupabaseBackend({ supabase, url }) {
+export function createSupabaseBackend({ supabase, url }: { supabase: SupabaseClient; url: string }): AdminBackend {
   // Ownership comes from a scoped RPC, without exposing author_id or
   // requiring SELECT on the whole row for a PostgREST computed field.
-  async function hydratePosts(posts) {
+    async function hydratePosts(posts: RawPost[]) {
     if (!posts?.length) return []
     const postIds = posts.map((post) => post.id)
     const [
@@ -337,21 +368,20 @@ export function createSupabaseBackend({ supabase, url }) {
     const ownReplies = new Set((ownership?.replies || []).map(String))
     const opReplies = new Set((opReplyIds || []).map(String))
 
-    const repliesByPost = new Map()
-    for (const { reply_votes, ...reply } of replies || []) {
+    const repliesByPost = new Map<string, Reply[]>()
+    for (const { reply_votes, ...reply } of (replies || []) as Array<Reply & { reply_votes?: Array<{ reply_id: number | string }> }>) {
       const key = String(reply.post_id)
-      if (!repliesByPost.has(key)) repliesByPost.set(key, [])
-      repliesByPost
-        .get(key)
-        .push(withVoteState({
+      const groupedReplies = repliesByPost.get(key) ?? []
+      groupedReplies.push(withVoteState({
           ...reply,
           is_mine: ownReplies.has(String(reply.id)),
           is_op: opReplies.has(String(reply.id)),
-        }, reply_votes && reply_votes.length > 0))
+      }, Boolean(reply_votes?.length)))
+      repliesByPost.set(key, groupedReplies)
     }
 
     return posts.map(({ post_votes, ...post }) => ({
-      ...withVoteState({ ...post, is_mine: ownPosts.has(String(post.id)) }, post_votes && post_votes.length > 0),
+      ...withVoteState({ ...post, is_mine: ownPosts.has(String(post.id)) }, Boolean(post_votes?.length)),
       replies: sortReplies(repliesByPost.get(String(post.id)) || []),
     }))
   }
@@ -414,13 +444,13 @@ export function createSupabaseBackend({ supabase, url }) {
     async getOwnProfile() {
       const { data, error } = await supabase.rpc('get_own_profile')
       if (error) throw error
-      return data
+      return data as Profile | null
     },
 
     async getProfile(publicId) {
       const { data, error } = await supabase.rpc('get_profile', { p_public_id: publicId })
       if (error) throw error
-      return data
+      return data as ProfileCard | null
     },
 
     async listCohorts() {
@@ -435,7 +465,7 @@ export function createSupabaseBackend({ supabase, url }) {
     async updateOwnProfile(profile) {
       const { data, error } = await supabase.rpc('update_own_profile', { p_profile: profile })
       if (error) throw error
-      return data
+      return data as Profile
     },
 
     async uploadAvatar(blob) {
@@ -448,13 +478,13 @@ export function createSupabaseBackend({ supabase, url }) {
       if (uploaded.error) throw uploaded.error
       const confirmed = await supabase.rpc('confirm_avatar_upload')
       if (confirmed.error) throw confirmed.error
-      return confirmed.data
+      return confirmed.data as Profile
     },
 
     async clearAvatar() {
       const { data, error } = await supabase.rpc('clear_avatar')
       if (error) throw error
-      return data
+      return data as Profile
     },
 
     async isMember(userId) {
@@ -488,7 +518,7 @@ export function createSupabaseBackend({ supabase, url }) {
       const { data: posts, error: postsError } = await query
 
       if (postsError) throw postsError
-      return hydratePosts(posts)
+      return hydratePosts((posts || []) as RawPost[])
     },
 
     async searchPosts(term) {
@@ -503,7 +533,7 @@ export function createSupabaseBackend({ supabase, url }) {
         .order('created_at', { ascending: false })
 
       if (postsError) throw postsError
-      return hydratePosts(posts)
+      return hydratePosts((posts || []) as RawPost[])
     },
 
     async listMine() {
@@ -526,12 +556,16 @@ export function createSupabaseBackend({ supabase, url }) {
       if (postError) throw postError
       if (replyError) throw replyError
 
-      const byNewest = (left, right) => new Date(right.created_at) - new Date(left.created_at)
+      const byNewest = (left: { created_at: string }, right: { created_at: string }) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime()
+      const postRows = (postVotes || []) as unknown as Array<{ posts: LikedPost | null }>
+      type ReplyVote = Omit<LikedReply, 'post_title'> & { posts: { id: number | string; title: string } | null }
+      const replyRows = (replyVotes || []) as unknown as Array<{ replies: ReplyVote | null }>
+      const likedPosts = postRows.map((vote) => vote.posts).filter(Boolean) as LikedPost[]
       return {
-        posts: (postVotes || []).map((vote) => vote.posts).filter(Boolean).sort(byNewest),
-        replies: (replyVotes || [])
+        posts: likedPosts.sort(byNewest),
+        replies: replyRows
           .map((vote) => vote.replies)
-          .filter((reply) => reply?.posts)
+          .filter((reply): reply is ReplyVote & { posts: { id: number | string; title: string } } => Boolean(reply?.posts))
           .map(({ posts, ...reply }) => ({ ...reply, post_title: posts.title }))
           .sort(byNewest),
       }
@@ -602,7 +636,7 @@ export function createSupabaseBackend({ supabase, url }) {
   }
 }
 
-function shapePosts(data, posts) {
+function shapePosts(data: DemoData, posts: DemoPost[]): Post[] {
   const likedReplyIds = new Set(
     (data.reply_votes || [])
       .filter((vote) => vote.user_id === demoUser.id)
@@ -647,10 +681,10 @@ function shapePosts(data, posts) {
   })
 }
 
-function createDemoBackend() {
-  const listeners = new Set()
+function createDemoBackend(): DemoBackend {
+  const listeners = new Set<(session: import('./types.ts').AppSession | null) => void>()
 
-  function readData() {
+function readData(): DemoData {
     const stored = window.localStorage.getItem(DEMO_STORAGE_KEY)
     if (!stored) {
       const seeded = initialDemoData()
@@ -659,7 +693,7 @@ function createDemoBackend() {
     }
 
     try {
-      return JSON.parse(stored)
+      return JSON.parse(stored) as DemoData
     } catch {
       const seeded = initialDemoData()
       window.localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(seeded))
@@ -667,7 +701,7 @@ function createDemoBackend() {
     }
   }
 
-  function writeData(data) {
+  function writeData(data: DemoData) {
     window.localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(data))
   }
 
@@ -677,7 +711,7 @@ function createDemoBackend() {
 
   function emit() {
     const session = currentSession()
-    for (const listener of listeners) listener(session)
+    for (const listener of listeners) (listener as (session: unknown) => void)(session)
   }
 
   function readProfile() {
@@ -690,7 +724,7 @@ function createDemoBackend() {
     }
   }
 
-  function saveProfile(profile) {
+  function saveProfile(profile: Profile) {
     const cohort = DEMO_COHORTS.find((item) => item.id === profile.cohort_id)
     const next = { ...profile, cohort_name: cohort?.name ?? null }
     window.localStorage.setItem(DEMO_PROFILE_KEY, JSON.stringify(next))
@@ -748,7 +782,7 @@ function createDemoBackend() {
     },
 
     async getProfile(publicId) {
-      if (publicId === 'demo-user') return publicProfileCard(await this.getOwnProfile(), true)
+      if (publicId === 'demo-user') return publicProfileCard(await this.getOwnProfile() as Profile, true)
       const profile = DEMO_DIRECTORY[publicId]
       return profile ? publicProfileCard(profile, false) : null
     },
@@ -789,11 +823,12 @@ function createDemoBackend() {
         data,
         data.posts
           .slice()
-          .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
           .filter((post) => cutoff === null || new Date(post.created_at).getTime() < cutoff)
           .slice(0, LIMITS.pageSize),
       )
     },
+
 
     async searchPosts(term) {
       const needle = String(term || '').trim().toLowerCase()
@@ -804,14 +839,14 @@ function createDemoBackend() {
         data.posts
           .filter((post) =>
             post.title.toLowerCase().includes(needle) || post.body.toLowerCase().includes(needle))
-          .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
           .slice(0, 50),
       )
     },
 
     async listMine() {
       const data = readData()
-      const byNewest = (left, right) => new Date(right.created_at) - new Date(left.created_at)
+      const byNewest = (left: { created_at: string }, right: { created_at: string }) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime()
       return {
         posts: data.posts
           .filter((post) => post.author_id === demoUser.id)
@@ -848,7 +883,7 @@ function createDemoBackend() {
           .filter((vote) => vote.user_id === demoUser.id)
           .map((vote) => String(vote.reply_id)),
       )
-      const byNewest = (left, right) => new Date(right.created_at) - new Date(left.created_at)
+      const byNewest = (left: { created_at: string }, right: { created_at: string }) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime()
       return {
         posts: data.posts
           .filter((post) => likedPostIds.has(String(post.id)))

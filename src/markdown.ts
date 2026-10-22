@@ -1,6 +1,6 @@
 import { Marked } from 'marked'
 
-const HTML_ESCAPE = {
+const HTML_ESCAPE: Record<string, string> = {
   '&': '&amp;',
   '<': '&lt;',
   '>': '&gt;',
@@ -8,11 +8,11 @@ const HTML_ESCAPE = {
   "'": '&#39;',
 }
 
-function escapeHtml(value) {
+function escapeHtml(value: unknown) {
   return String(value ?? '').replace(/[&<>"']/g, (char) => HTML_ESCAPE[char])
 }
 
-export function safeHref(value) {
+export function safeHref(value: unknown): string | null {
   const trimmed = String(value ?? '').trim()
   if (!trimmed) return null
 
@@ -55,6 +55,6 @@ marked.use({
   },
 })
 
-export function renderMarkdown(source) {
+export function renderMarkdown(source: unknown) {
   return marked.parse(String(source ?? ''), { async: false })
 }
