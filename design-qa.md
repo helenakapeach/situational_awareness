@@ -4,7 +4,7 @@ Status: **passed** on branch `codex/profile-wysiwyg`.
 
 ## Reference and viewport
 
-- Selected design reference: `/Users/alin7/.codex/generated_images/01a15f64-4965-7b42-a955-5c3fab30d3b7/exec-13dbdf51-0b3c-412c-93fd-bc093546178a.png` (1487 × 1058 px).
+- Selected design reference: [profile-wysiwyg-mock.png](docs/assets/profile-wysiwyg-mock.png) (1487 × 1058 px).
 - Desktop browser viewport: 1488 × 1058 px.
 - Mobile browser viewport: 390 × 844 px.
 - QA used the existing Vite app and a browser-local demo profile. No fixtures or shared identity data were changed.
