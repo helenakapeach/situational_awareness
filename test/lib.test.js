@@ -18,6 +18,7 @@ import {
   isUploadedAvatar,
   reachedMilestones,
   normalizeInviteCode,
+  normalizeLinkedInUrl,
   normalizePostId,
   postIdFromSearch,
   postShareText,
@@ -31,6 +32,7 @@ import {
   validatePost,
   validateProfile,
   validateReply,
+  validLinkedInUrl,
   withVoteState,
 } from '../src/lib.js'
 import { renderMarkdown, safeHref } from '../src/markdown.js'
@@ -126,6 +128,12 @@ test('profile validation accepts a complete card and rejects bad contact details
   assert.equal(validateProfile({ display_name: '好', wechat_id: '12bad' }).ok, false)
   assert.equal(validateProfile({ display_name: '好', role: 'staff' }).ok, false)
   assert.equal(validateProfile({ display_name: '好', role: 'mentor', cohort_id: 4 }).value.cohort_id, null)
+})
+
+test('LinkedIn display input becomes a usable URL in unsaved profile previews', () => {
+  const previewUrl = normalizeLinkedInUrl('www.linkedin.com/in/linran')
+  assert.equal(previewUrl, 'https://www.linkedin.com/in/linran')
+  assert.equal(validLinkedInUrl(previewUrl), true)
 })
 
 test('anonymous personas stay on the content and not the person', () => {
