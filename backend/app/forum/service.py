@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import re
+from collections import defaultdict
 from datetime import datetime
 from typing import Any
 
 from fastapi import HTTPException
-from pymongo import ASCENDING, DESCENDING, ReturnDocument
+from pymongo import DESCENDING, ReturnDocument
 
 from ..common.service import BaseService, utc_now
 from ..profile.service import ProfileService
@@ -24,7 +25,9 @@ class ForumService(BaseService):
         super().__init__(db, user)
         self.profiles = ProfileService(db, user)
 
-    def _serialize_content(self, doc: dict[str, Any], kind: str, *, votes=True) -> dict[str, Any]:
+    def _serialize_content(
+        self, doc: dict[str, Any], profiles: dict[str, dict], votes: dict[int, dict]
+    ) -> dict[str, Any]:
         fields = (
             "id",
             "title",
@@ -36,18 +39,12 @@ class ForumService(BaseService):
             "updated_at",
         )
         result = {key: doc[key] for key in fields if key in doc}
-        profile = self.profiles.get_internal_profile(str(doc.get("author_id")))
-        if doc.get("is_anonymous"):
-            result.update(self.profiles.author_identity(None))
-        else:
-            result.update(self.profiles.author_identity(profile))
-        collection = self.db.post_votes if kind == "post" else self.db.reply_votes
-        id_field = "post_id" if kind == "post" else "reply_id"
-        result["upvote_count"] = collection.count_documents({id_field: doc["id"]})
+        profile = None if doc.get("is_anonymous") else profiles.get(str(doc.get("author_id")))
+        result.update(self.profiles.author_identity(profile))
+        vote = votes.get(doc["id"], {})
+        result["upvote_count"] = vote.get("count", 0)
         result["is_mine"] = str(doc.get("author_id")) == self.user_id
-        result["liked_by_me"] = (
-            bool(collection.find_one({id_field: doc["id"], "user_id": self.user_id})) if votes else False
-        )
+        result["liked_by_me"] = bool(vote.get("liked_by_me", False))
         return result
 
     def _next_id(self, name: str, session) -> int:
@@ -91,19 +88,70 @@ class ForumService(BaseService):
         )
         return self._hydrate_posts(posts)
 
+    def _content_votes(self, collection: Any, id_field: str, ids: list[int]) -> dict[int, dict]:
+        """Count votes and read the caller's vote together, without loading voters."""
+        if not ids:
+            return {}
+        return {
+            row["_id"]: row
+            for row in collection.aggregate(
+                [
+                    {"$match": {id_field: {"$in": ids}}},
+                    {
+                        "$group": {
+                            "_id": f"${id_field}",
+                            "count": {"$sum": 1},
+                            "liked_by_me": {"$max": {"$cond": [{"$eq": ["$user_id", self.user_id]}, 1, 0]}},
+                        }
+                    },
+                ]
+            )
+        }
+
     def _hydrate_posts(self, posts: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Keep feed and search thread privacy, votes and ownership identical."""
+        """Batch thread reads while preserving feed, search and detail semantics."""
+        if not posts:
+            return []
+        post_ids = [post["id"] for post in posts]
+        replies = list(self.db.replies.find({"post_id": {"$in": post_ids}}, {"_id": 0}))
+        author_ids = list(
+            {str(doc.get("author_id")) for doc in posts + replies if not doc.get("is_anonymous")}
+        )
+        profiles = (
+            {
+                profile["user_id"]: profile
+                for profile in self.db.profiles.find({"user_id": {"$in": author_ids}})
+            }
+            if author_ids
+            else {}
+        )
+        cohort_ids = list(
+            {profile["cohort_id"] for profile in profiles.values() if profile.get("cohort_id") is not None}
+        )
+        cohorts = (
+            {
+                cohort["id"]: cohort
+                for cohort in self.db.cohorts.find({"id": {"$in": cohort_ids}}, {"name": 1, "id": 1})
+            }
+            if cohort_ids
+            else {}
+        )
+        for profile in profiles.values():
+            cohort = cohorts.get(profile.get("cohort_id"))
+            profile["cohort_name"] = cohort["name"] if cohort else None
+
+        post_votes = self._content_votes(self.db.post_votes, "post_id", post_ids)
+        reply_votes = self._content_votes(self.db.reply_votes, "reply_id", [reply["id"] for reply in replies])
+        replies_by_post = defaultdict(list)
+        for reply in replies:
+            replies_by_post[reply["post_id"]].append(reply)
+
         result = []
         for post in posts:
-            doc = self._serialize_content(post, "post")
-            replies = list(
-                self.db.replies.find({"post_id": post["id"]}, {"_id": 0}).sort(
-                    [("created_at", ASCENDING), ("id", ASCENDING)]
-                )
-            )
+            doc = self._serialize_content(post, profiles, post_votes)
             doc["replies"] = []
-            for reply in replies:
-                serialized = self._serialize_content(reply, "reply")
+            for reply in replies_by_post[post["id"]]:
+                serialized = self._serialize_content(reply, profiles, reply_votes)
                 serialized["is_op"] = reply.get("author_id") == post.get("author_id") and bool(
                     reply.get("is_anonymous")
                 ) == bool(post.get("is_anonymous"))
@@ -168,22 +216,7 @@ class ForumService(BaseService):
         p = self.db.posts.find_one({"id": int(post_id)}, {"_id": 0})
         if not p:
             return None
-        result = self._serialize_content(p, "post")
-        result["replies"] = [
-            self._serialize_content(r, "reply")
-            for r in self.db.replies.find({"post_id": int(post_id)}, {"_id": 0}).sort(
-                [("created_at", ASCENDING), ("id", ASCENDING)]
-            )
-        ]
-        for reply in result["replies"]:
-            raw_reply = self.db.replies.find_one({"id": reply["id"]}, {"author_id": 1, "is_anonymous": 1})
-            reply["is_op"] = bool(
-                raw_reply
-                and raw_reply.get("author_id") == p.get("author_id")
-                and bool(raw_reply.get("is_anonymous")) == bool(p.get("is_anonymous"))
-            )
-        result["replies"].sort(key=lambda reply: (-reply["upvote_count"], reply["created_at"], reply["id"]))
-        return result
+        return self._hydrate_posts([p])[0]
 
     def list_liked(self) -> dict[str, list[dict[str, Any]]]:
         self._member()
